@@ -28,7 +28,7 @@ export default async function Login(props: { searchParams: Promise<{ e?: string 
   return (
     <main className="min-h-screen grid place-items-center px-5 py-10">
       <div className="w-full max-w-[420px] grid gap-5">
-        <div className="grid justify-items-center gap-2 text-center"><Logo variant="stacked" className="h-[110px] w-auto" /><h1 className="text-[20px] font-bold text-muted">Team console</h1></div>
+        <div className="grid justify-items-center gap-2 text-center"><Logo variant="stacked" className="h-auto w-[280px]" /><h1 className="text-[20px] font-bold text-muted">Team console</h1></div>
         <form action={login} className="card p-6 grid gap-4 shadow-press-sm">
           {searchParams.e && <Notice tone="bad">{searchParams.e}</Notice>}
           <div><label className="label" htmlFor="email">Email</label><input id="email" name="email" type="email" className="field" autoComplete="username" required /></div>

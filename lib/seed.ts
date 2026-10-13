@@ -92,7 +92,7 @@ const PRODUCTS: Seed[] = [
     promise: { max_quantity: 100 },
   },
   {
-    slug: 'branded-t-shirts', name: 'Branded T-shirts', mode: 'size', cls: 'photo',
+    slug: 'branded-t-shirts', name: 'Branded T-shirts and merchandise', mode: 'size', cls: 'photo',
     blurb: 'Cotton round-neck, front print.',
     options: [
       { key: 'colour', label: 'Shirt colour', default: 'white', choices: [{ value: 'white', label: 'White' }, { value: 'black', label: 'Black' }, { value: 'navy', label: 'Navy' }], help: 'We confirm colours in stock on your proof.' },

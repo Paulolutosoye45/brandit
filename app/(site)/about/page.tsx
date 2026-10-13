@@ -16,7 +16,7 @@ export default async function About() {
     <>
       <PageHead title="About Brandit" sub="Design and print for Lagos, made to be easy." />
       <div className="mx-auto grid max-w-[760px] gap-10 px-5 pb-12 text-[18px] leading-relaxed">
-        <Logo variant="stacked" className="h-auto w-[220px]" />
+        <Logo variant="stacked" className="h-auto w-[300px] max-w-full" />
         <section className="grid gap-3">
           <h2 className="text-[28px]">Why we exist</h2>
           <p>Getting something printed in Lagos should not mean travelling to three places, calling five times, and hoping it arrives when someone said it would. You should be able to do it from your phone, see what it costs, know exactly when it will arrive, and have someone you can reach if anything goes wrong.</p>

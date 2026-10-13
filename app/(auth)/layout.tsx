@@ -10,7 +10,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <aside className="on-dark relative hidden overflow-hidden bg-ink text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
         <Halftone cols={11} rows={20} gap={40} max={15} fit="slice" className="absolute inset-0 h-full w-full opacity-[.85]" />
         <div className="absolute inset-0 bg-gradient-to-r from-ink from-35% via-ink/80 to-transparent" aria-hidden="true" />
-        <Link href="/" aria-label="Brandit home" className="relative self-start"><Logo variant="stacked" tone="light" className="h-[150px] w-auto" priority /></Link>
+        <Link href="/" aria-label="Brandit home" className="relative self-start"><Logo variant="stacked" tone="light" className="h-auto w-[340px]" priority /></Link>
         <div className="relative grid gap-8">
           <h2 className="max-w-[420px] text-[56px] leading-[1.02]">Printing without the hassle.</h2>
           <ul className="grid max-w-[380px] gap-3.5 text-[18px]">

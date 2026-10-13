@@ -19,23 +19,22 @@ export function Header({ customer, t, studio = false }: { customer: { name: stri
   const first = customer?.name?.split(' ')[0];
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
-      <div className="mx-auto flex h-[64px] max-w-[1160px] items-center justify-between gap-6 px-5">
-        <Link href="/" aria-label="Brandit home" className="inline-flex min-h-[44px] items-center"><Logo className="h-9 w-auto" priority /></Link>
+      <div className="mx-auto flex h-[64px] max-w-[1160px] items-center justify-between gap-4 px-5">
+        <Link href="/" aria-label="Brandit home" className="inline-flex min-h-[44px] shrink-0 items-center"><Logo className="h-9 w-auto" priority /></Link>
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-          {[['/products', 'Products', ''], ['/templates', 'Templates', ''], ...(studio ? [['/studio', 'Studio', '']] : []), ['/plan-event', 'Plan an event', 'hidden lg:inline-flex'], ['/custom-order', 'Custom order', 'hidden xl:inline-flex'], ['/track', 'Track order', ''], ['/help', 'Help', '']].map(([href, label, vis]) => (
-            <Link key={href} href={href} className={`${vis || 'inline-flex'} min-h-[44px] items-center rounded-sm2 px-3 font-medium hover:bg-paper2 lg:px-3.5`}>{t(label)}</Link>
+          {[['/products', 'Products', ''], ['/templates', 'Templates', ''], ...(studio ? [['/studio', 'Studio', 'hidden lg:inline-flex']] : []), ['/plan-event', 'Plan an event', 'hidden xl:inline-flex'], ['/custom-order', 'Custom order', 'hidden xl:inline-flex'], ['/track', 'Track order', ''], ['/help', 'Help', 'hidden lg:inline-flex']].map(([href, label, vis]) => (
+            <Link key={href} href={href} className={`${vis || 'inline-flex'} min-h-[44px] items-center whitespace-nowrap rounded-sm2 px-2.5 font-medium hover:bg-paper2`}>{t(label)}</Link>
           ))}
         </nav>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {customer ? (
-            <Link href="/account" aria-label={first ? `${first}, my account` : 'My account'} className="inline-flex min-h-[44px] items-center gap-2.5 rounded-full py-1 pl-1 pr-3 hover:bg-paper2">
+            <Link href="/account" aria-label={first ? `${first}, my account` : 'My account'} title={first ? `${first}, my account` : 'My account'} className="inline-flex min-h-[44px] items-center rounded-full p-1 hover:bg-paper2">
               <Avatar name={customer.name ?? customer.email} className="h-9 w-9 text-[16px]" />
-              {first && <span className="hidden font-bold lg:inline">{first}</span>}
             </Link>
           ) : (
-            <Link href="/signin" className="btn-ghost btn-sm">{t('Sign in')}</Link>
+            <Link href="/signin" className="btn-ghost btn-sm whitespace-nowrap">{t('Sign in')}</Link>
           )}
-          <Link href="/products" className="btn-primary btn-sm hidden md:inline-flex">{t('Start your order')}</Link>
+          <Link href="/products" className="btn-primary btn-sm hidden whitespace-nowrap md:inline-flex">{t('Start your order')}</Link>
         </div>
       </div>
     </header>

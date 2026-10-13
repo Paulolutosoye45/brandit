@@ -41,7 +41,7 @@ export const ITEMS: ItemDef[] = [
   { key: 'posters', label: 'Posters', slug: 'posters', hint: 'For walls, gates and notice boards.', unit: 'posters', qty: () => 10, on: ['birthday', 'school', 'opening'] },
   { key: 'banner', label: 'Event banner (6 by 3 feet)', slug: 'flex-banners', hint: 'Hangs at the entrance or behind the stage.', unit: 'banner', qty: () => 1, on: ['wedding', 'birthday', 'funeral', 'church', 'school', 'opening'], widthFt: 6, heightFt: 3 },
   { key: 'rollup', label: 'Roll-up banner', slug: 'roll-up-banners', hint: 'Stands on its own. Good for a portrait or a welcome sign.', unit: 'banner', qty: () => 1, on: ['funeral', 'church', 'corporate'] },
-  { key: 'tshirts', label: 'Branded T-shirts', slug: 'branded-t-shirts', hint: 'For the family, the team or the crew.', unit: 'T-shirts', qty: (g) => clamp(roundUp(Math.ceil(g / 10), 5), 10, 500), on: [] },
+  { key: 'tshirts', label: 'Branded T-shirts and merchandise', slug: 'branded-t-shirts', hint: 'For the family, the team or the crew.', unit: 'T-shirts', qty: (g) => clamp(roundUp(Math.ceil(g / 10), 5), 10, 500), on: [] },
   { key: 'souvenirs', label: 'Stickers or labels for souvenirs', slug: 'stickers', hint: 'One for each guest to seal a favour bag or bottle.', unit: 'stickers', qty: (g) => clamp(roundUp(g, 50), 50, 5000), on: ['wedding'] },
   { key: 'badges', label: 'Name badges', slug: 'id-cards', hint: 'For staff, hosts or speakers.', unit: 'badges', qty: (g) => clamp(roundUp(Math.ceil(g / 5), 5), 10, 500), on: ['corporate'] },
 ];

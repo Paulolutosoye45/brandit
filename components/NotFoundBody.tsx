@@ -6,7 +6,7 @@ import { ProductArt } from './ProductArt';
 export function NotFoundBody({ standalone = false }: { standalone?: boolean }) {
   return (
     <div className={`mx-auto grid max-w-[560px] justify-items-start gap-6 px-5 ${standalone ? 'min-h-screen content-center py-10' : 'py-16 sm:py-24'}`}>
-      {standalone && <Link href="/" aria-label="Brandit home"><Logo variant="stacked" className="h-[120px] w-auto" /></Link>}
+      {standalone && <Link href="/" aria-label="Brandit home"><Logo variant="stacked" className="h-auto w-[300px] max-w-full" /></Link>}
       <div className="h-[120px] w-[160px] rounded-lg2 bg-warn-tint p-3"><ProductArt slug="flyers" /></div>
       <div className="grid gap-2">
         <h1 className="text-[40px] leading-[1.05] sm:text-[52px]">That page is not here.</h1>

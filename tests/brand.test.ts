@@ -23,7 +23,8 @@ describe('approved logo files', () => {
     }
   });
   it('keeps the master, and the sizes the Logo component promises', () => {
-    expect(pngSize('public/brand/logo-original.png')).toMatchObject({ w: 1775, h: 1538 });
+    expect(pngSize('public/brand/logo-original.png')).toMatchObject({ w: 2560, h: 2560 });
+    expect(pngSize('public/brand/logo-original-on-dark.png')).toMatchObject({ w: 2560, h: 2560, alpha: true });
     const src = fs.readFileSync(path.join(root, 'components/Logo.tsx'), 'utf8');
     for (const [name, key] of [['logo-horizontal', 'full'], ['logo', 'stacked'], ['mark', 'mark'], ['wordmark', 'wordmark']] as const) {
       const s = pngSize(`public/brand/${name}.png`);
