@@ -5,6 +5,7 @@ import { channelOn } from './otp';
 import { paystackOn } from './payments';
 import { s3On } from './storage';
 import { smsOn, whatsappOn } from './messages';
+import { envProblems, onVercel } from './envcheck';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getSettings } from './settings';
@@ -83,9 +84,13 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
     : { id: 'sweep', group: 'The Promise', label: 'Late-order check', status: demo ? 'info' : 'warn', detail: mins == null ? 'It has not run yet.' : `Last ran ${mins} minutes ago.`, fix: 'This marks jobs at risk and refunds late 24-hour orders. It runs by itself every 5 minutes on a normal host. On Vercel, set CRON_SECRET.' });
 
   // Files
+  const vercel = onVercel(env);
   add(s3On()
     ? { id: 'files', group: 'Files', label: 'Artwork storage', status: 'ok', detail: 'S3-compatible bucket.' }
-    : { id: 'files', group: 'Files', label: 'Artwork storage', status: demo ? 'info' : 'warn', detail: 'Local disk.', fix: 'Fine if the host has a persistent disk that is backed up. Otherwise set the S3_ values (Cloudflare R2 is cheap).' });
+    : vercel
+      ? { id: 'files', group: 'Files', label: 'Artwork storage', status: 'bad', detail: 'Local disk. Vercel has no disk that keeps files, so artwork uploads fail.', fix: 'Set the S3_ values (Cloudflare R2 is cheap): DEPLOY.md, Path D.' }
+      : { id: 'files', group: 'Files', label: 'Artwork storage', status: demo ? 'info' : 'warn', detail: 'Local disk.', fix: 'Fine if the host has a persistent disk that is backed up. Otherwise set the S3_ values (Cloudflare R2 is cheap).' });
+  if (vercel) add({ id: 'vercel-upload', group: 'Files', label: 'Upload size on Vercel', status: 'warn', detail: 'Vercel refuses any request over about 4.5 MB, so uploads are capped at 4 MB on this host whatever the setting says. Most print artwork is bigger.', fix: 'For print-size files, host on Render (DEPLOY.md, Path A), or ask for direct-to-storage uploads.' });
 
   // Brandit Studio (AI designs)
   const st = await getSettings();
@@ -97,6 +102,7 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
     add(drawers.length
       ? { id: 'studio-keys', group: 'Brandit Studio', label: 'Picture makers', status: 'ok', detail: `Connected: ${drawers.join(', ')}.`, fix: 'Run "Test the connections" on the Studio page after any change.' }
       : { id: 'studio-keys', group: 'Brandit Studio', label: 'Picture makers', status: demo ? 'info' : 'warn', detail: demo ? 'No vendor key. The built-in demo drawing engine is used.' : 'No vendor key, so Studio stays closed to customers.', fix: 'Set RECRAFT_API_KEY (and one of BFL_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY). Run scripts/studio-bakeoff.ts first to choose.' });
+    if (vercel && drawers.length) add({ id: 'studio-vercel', group: 'Brandit Studio', label: 'Studio on Vercel', status: 'warn', detail: 'Vercel pauses a server copy as soon as it has replied, so a picture job can stop part-way. The five-minute check picks stalled jobs up again, but customers will wait longer than they should.', fix: 'Keep Studio closed to customers on Vercel, or host on Render (DEPLOY.md, Path A).' });
     let fontsOk = true;
     try { fontsOk = FONTS.every((f) => [f.files.regular, f.files.bold].every((x) => fs.existsSync(path.join(fontDir(), x)))); } catch { fontsOk = false; }
     add(fontsOk
@@ -121,11 +127,7 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
   return { checks: c, problems: c.filter((x) => x.status === 'bad').length, warnings: c.filter((x) => x.status === 'warn').length };
 }
 
-/** The few things that must be right for a live site to start at all. */
+/** The few things that must be right for a live site to start at all. The rules live in envcheck.ts so the middleware can use them too. */
 export function fatalProblems(env: NodeJS.ProcessEnv = process.env): string[] {
-  if (isDemo(env)) return [];
-  const p: string[] = [];
-  if ((env.SESSION_SECRET ?? '').length < 16) p.push('SESSION_SECRET must be set to a long random string (16 characters or more).');
-  if (!env.DATABASE_URL) p.push('DATABASE_URL must point to a hosted Postgres database. The built-in local database is for trying things out only.');
-  return p;
+  return envProblems(env);
 }

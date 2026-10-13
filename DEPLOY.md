@@ -9,7 +9,7 @@ This guide takes Brandit from a folder of code to a live site taking real orders
 | **A. Render, with Cloudflare R2 for files and Cloudflare in front** (recommended, and what `render.yaml` sets up) | Someone else runs the server and database, with automatic backups. About $45 to $50 a month. | Almost nothing. |
 | **B. One server with Docker Compose** | The cheapest option, about €6 to €7 a month (for example Hetzner). Everything on one small server with automatic HTTPS. | The server: updates and backups. |
 | **C. Railway or Fly.io** | Same idea as Render. The `Dockerfile` is picked up automatically. Add a Postgres database and a volume for files. | Almost nothing. |
-| Vercel | Not recommended. Artwork uploads pass through the app and Vercel caps request size at about 4.5 MB. | |
+| **D. Vercel** | Works for browsing, sign-in, ordering, payment and the console, but with limits: uploads are capped at 4 MB (Vercel refuses requests over about 4.5 MB, and most print artwork is bigger), Studio's picture jobs can stall, and the free plan allows only a daily scheduled check. Good for trying the site; Render is better for real orders. | A database and a file bucket of your own. |
 
 Prices are from vendor and comparison sites in August and September 2026. Check each pricing page before you pay.
 
@@ -112,6 +112,52 @@ You know it worked when the log shows a line starting `[brandit] LIVE` and `http
 
 **5. Open the console and work down the Setup page.** Go to `https://yourdomain.ng/console/login`, sign in with `ADMIN_EMAIL` and `ADMIN_PIN`, then open **Setup**. Everything marked "Fix before launch" stops customers from ordering or paying. Fix them in the order below, restarting with `docker compose up -d` after each change to `.env`.
 
+## Path D: Vercel
+
+Read the limits first. **Uploads are capped at 4 MB** on Vercel (the platform refuses any request over about 4.5 MB, and Brandit's customers upload print artwork that is often larger). **Brandit Studio's picture jobs can stall**, because Vercel pauses a server copy as soon as it has replied. **The free (Hobby) plan allows scheduled checks only once a day**, and Brandit's late-order check runs every five minutes. For a site taking real print orders, use Path A. Use Vercel to try the site, or for jobs with small files.
+
+**1. A database Vercel can reach.** Vercel has no disk that keeps files, so the built-in database cannot run. You need a hosted Postgres.
+- On Render, open the database and copy the **External Database URL**. Its host ends in `.render.com`. The **Internal** URL (a host like `dpg-abc123-a`) only works for services running inside Render and gives a 500 from Vercel. In the database's **Access Control**, allow connections from anywhere (`0.0.0.0/0`), because Vercel connects from changing addresses.
+- On Neon or Supabase, use the direct connection or the session-mode address, not a transaction pooler. Brandit uses database locks that a transaction pooler breaks.
+- Put the database in Frankfurt to match `vercel.json` (`"regions": ["fra1"]`). If yours is elsewhere, change that region to the nearest Vercel region, or every page waits on a long trip to the database.
+
+**2. A file bucket.** Cloudflare R2 (Path A, step 2). Without it artwork uploads fail on Vercel.
+
+**3. Environment variables.** In Vercel, open the project, then Settings, then Environment Variables, and add these for Production. Do not upload a `.env` file.
+
+| Name | Value |
+| --- | --- |
+| `DEMO_MODE` | `false` (never `true` next to a real database: the site refuses to start) |
+| `NEXT_PUBLIC_APP_URL` | Your site address, such as `https://your-project.vercel.app` or your own domain |
+| `SESSION_SECRET` | A long random string (`openssl rand -hex 32`) |
+| `DATABASE_URL` | The External Database URL from step 1 |
+| `ADMIN_EMAIL`, `ADMIN_PIN` | Your team console sign-in. The PIN is 6 to 12 digits, not a run like `123456` |
+| `CRON_SECRET` | Any long random string. Vercel sends it with the scheduled check |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | From step 2 |
+| `NEXT_PUBLIC_WHATSAPP` | Your WhatsApp number, country code first, no plus |
+| `PAYSTACK_SECRET_KEY` and the other keys | As in "The accounts you need" below |
+
+Optional: `DATABASE_POOL_MAX` (connections each server copy may open; default 4 on Vercel).
+
+**4. Redeploy.** A change to an environment variable reaches the site only on the next deploy: open Deployments, the three dots on the latest one, then Redeploy. Addresses that start with `NEXT_PUBLIC_` are built in, so they need a redeploy as well.
+
+**5. Check it.** Open `https://your-site/api/health`. It should answer `{"ok":true,"db":"up","mode":"live"}`. Then sign in at `/console/login` and work down the **Setup** page. On Vercel the Setup page also tells you about the upload cap and Studio.
+
+**6. The five-minute check.** On the Pro plan nothing more is needed: `vercel.json` schedules it. On the free plan a schedule more frequent than daily makes the deploy fail with "Hobby accounts are limited to daily cron jobs". Delete the `crons` block from `vercel.json` and have a free pinger such as cron-job.org call `https://your-site/api/cron/sweep` every five minutes with the header `Authorization: Bearer <your CRON_SECRET>`.
+
+**If the site shows an error**
+
+| What you see | What to do |
+| --- | --- |
+| A page saying **"Brandit is not set up yet"** | A required setting is missing. The page lists which (names only). Add them in Environment Variables, then redeploy. |
+| A plain **"500 Internal Server Error"** | The server stopped while starting. In Vercel open the project, then **Logs**, set the filter to Errors, reload the site and open the newest line. Brandit writes `[brandit] Cannot start` followed by what is wrong and what to do. |
+| The log mentions `ENOTFOUND dpg-...` | That is Render's Internal Database URL. Use the External one (step 1). |
+| The log says the database timed out or refused the connection | The URL is the wrong one, the database is not running, or it does not accept outside connections. Check Access Control. |
+| The log says `password authentication failed` | Copy `DATABASE_URL` again from the database page. |
+| The log says `too many connections` | Set `DATABASE_POOL_MAX` to `2`, or use fewer database connections on your plan. |
+| Uploads of big files are refused | Expected on Vercel: the limit is 4 MB. See the top of this section. |
+| The deploy fails on the cron line | Free plan: see step 6. |
+
 ## The accounts you need (all paths)
 
 | For | Where | Settings |
@@ -176,6 +222,8 @@ Every setting is explained in `.env.example`. Settings are read when the server 
 Upgrading an existing site: four database migrations (`004_catalog_coupons_custom`, `005_review_consent`, `006_growth`, `007_studio`) run by themselves on first start. They only add tables, columns and starting content (ten templates, three seasonal pages) and keep all existing products, orders, reviews and customers. Unit tests run them on a database that already has data. **Back up the database first**, as always. On Render that is the database's **Backups** tab; on a Docker server run `./scripts/backup.sh`.
 
 Tested: the production build starts from the same commands `render.yaml` uses (`node .next/standalone/server.js`) against a real PostgreSQL server in live mode. The health check, the database migrations, the first admin, the five-minute check's protection, the static files, the logo and the security headers all worked. The blueprint's settings are also locked by an automated test (region, plan names, a private database, no secrets in the file).
+
+Vercel (Path D): the start-up checks were reproduced on a normal Node server with `VERCEL=1` and each failure was confirmed to produce the page or the log line described above. Brandit has **not** been deployed on Vercel itself: the database connection from Vercel, the 4 MB cap, the scheduled check and Studio on Vercel are untested there.
 
 Not tested: `render.yaml` has not been run on a Render account, so run `render blueprints validate render.yaml` first and watch the first deploy's log. The Docker, Compose and Caddy files for Path B have not been run on a Docker host. Do a full dry run, with a real small order and a real refund, before pointing your real domain at it.
 

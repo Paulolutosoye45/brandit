@@ -1,4 +1,5 @@
 import { MIGRATIONS } from './schema';
+import { isDemoEnv } from './envcheck';
 
 export type Row = Record<string, any>;
 export interface Q {
@@ -21,16 +22,8 @@ export function attachPoolGuards(pool: { on(event: 'error', fn: (e: Error) => vo
 
 const g = globalThis as unknown as { __brandit_db?: Promise<Driver> };
 
-/**
- * Demo mode shows sign-in codes on screen, fakes payments and creates demo staff with a known PIN.
- * It is on by default only while developing. In production it must be asked for explicitly,
- * so forgetting a setting can never switch it on.
- */
-export const isDemo = (env: NodeJS.ProcessEnv = process.env) => {
-  if (env.DEMO_MODE === 'true') return true;
-  if (env.DEMO_MODE === 'false') return false;
-  return env.NODE_ENV !== 'production';
-};
+/** Demo mode: see lib/envcheck.ts. On by default only while developing; in production it must be asked for. */
+export const isDemo = (env: NodeJS.ProcessEnv = process.env) => isDemoEnv(env);
 
 /** Refuse a combination that would put demo logins on a real database. */
 export function assertSafeMode(env: NodeJS.ProcessEnv = process.env) {
@@ -44,7 +37,9 @@ async function open(): Promise<Driver> {
   if (process.env.DATABASE_URL) {
     const { Pool } = await import('pg');
     const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl, max: 10, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, statement_timeout: 30_000 });
+    // Vercel starts many short-lived copies of the server, and each keeps its own pool, so keep each one small.
+    const max = Math.max(1, Math.min(50, Math.floor(Number(process.env.DATABASE_POOL_MAX)) || (process.env.VERCEL ? 4 : 10)));
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, statement_timeout: 30_000 });
     attachPoolGuards(pool);
     return {
       query: async <T extends Row = Row>(sql: string, params?: unknown[]) => (await pool.query(sql, params as any[])).rows as T[],
@@ -128,7 +123,13 @@ async function boot(): Promise<Driver> {
 }
 
 function driver(): Promise<Driver> {
-  if (!g.__brandit_db) g.__brandit_db = boot();
+  if (!g.__brandit_db) {
+    // A failed start must not be remembered: the next request tries again, so a database that was briefly down does not
+    // leave this copy of the server broken until it is replaced.
+    const p = boot();
+    g.__brandit_db = p;
+    p.catch(() => { if (g.__brandit_db === p) g.__brandit_db = undefined; });
+  }
   return g.__brandit_db;
 }
 

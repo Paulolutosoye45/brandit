@@ -81,7 +81,7 @@ Work through this in order.
 11. **Contact details.** Optionally set `NEXT_PUBLIC_SUPPORT_EMAIL` and `NEXT_PUBLIC_BUSINESS_ADDRESS`. They appear on the Contact page and in the legal pages. Also enter your pickup address in the console under Delivery and rules.
 12. **Photos.** Upload a real photo for each product in the console (Products, Edit, Photos). Photos are shrunk automatically with `sharp`, which installs with `npm install`.
 
-**Hosting.** Render in the Frankfurt region, with R2 for files and Cloudflare for your domain, is the tested recommendation: see DEPLOY.md, Path A. Any Node host works, but Vercel does not suit this version: uploads pass through the app and Vercel caps request bodies at about 4.5 MB. Behind Cloudflare's free plan a single upload cannot exceed 100 MB, so the upload limit defaults to 90 MB. The five-minute late-order check runs inside the server, so keep one instance.
+**Hosting.** Render in the Frankfurt region, with R2 for files and Cloudflare for your domain, is the tested recommendation: see DEPLOY.md, Path A. Any Node host works. Vercel runs the site too (DEPLOY.md, Path D) but caps uploads at 4 MB, because uploads pass through the app and Vercel refuses request bodies over about 4.5 MB. Behind Cloudflare's free plan a single upload cannot exceed 100 MB, so the upload limit defaults to 90 MB. The five-minute late-order check runs inside the server, so keep one instance.
 
 ## Project map
 

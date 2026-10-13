@@ -52,7 +52,10 @@ export function ArtworkStep(p: Props) {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `/api/orders/${p.orderId}/upload${asReference ? '?as=reference' : ''}`);
       xhr.upload.onprogress = (e) => e.lengthComputable && setPct(Math.round((e.loaded / e.total) * 100));
-      xhr.onload = () => { try { resolve(JSON.parse(xhr.responseText)); } catch { resolve({ ok: false, error: 'Something went wrong. Please try again.' }); } };
+      xhr.onload = () => {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch { resolve({ ok: false, error: xhr.status === 413 ? `This file is larger than ${p.maxUploadMb} MB. Export a smaller copy and upload that.` : 'Something went wrong. Please try again.' }); }
+      };
       xhr.onerror = () => resolve({ ok: false, error: 'The upload was interrupted. Check your connection and try again.' });
       xhr.send(fd);
     });
@@ -63,6 +66,8 @@ export function ArtworkStep(p: Props) {
     setErr(null); setOut(null); setAgree(false); setPct(0);
     if (preview) URL.revokeObjectURL(preview.url);
     setPreview({ url: URL.createObjectURL(file), name: file.name, pdf: file.type === 'application/pdf' });
+    // Say so at once instead of sending a file the site is going to refuse.
+    if (file.size > p.maxUploadMb * 1_000_000) { setPct(null); setOut({ ok: false, error: `This file is larger than ${p.maxUploadMb} MB. Export a smaller copy and upload that.` } as Outcome); return; }
     const r: Outcome = await send(file);
     setPct(null);
     setOut(r);
