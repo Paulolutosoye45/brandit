@@ -1,0 +1,74 @@
+# Render Blueprint for Brandit: one web service and one Postgres database, both in Frankfurt.
+#
+# Artwork files go to a Cloudflare R2 bucket (the S3_* settings), not to a disk. A service with a disk
+# cannot do zero-downtime deploys, and a bucket is cheaper and survives replacing the server.
+#
+# Check the file before using it (needs the Render CLI v2.7 or later):   render blueprints validate render.yaml
+# Then follow DEPLOY.md, "Path A: Render".
+#
+# The region cannot be changed after creation, so it is set here on purpose: Frankfurt is the nearest
+# Render region to Lagos. The web service and the database must share a region to use the private network.
+
+services:
+  - type: web
+    name: brandit
+    runtime: node
+    region: frankfurt
+    plan: 1c-2g            # 1 CPU, 2 GB. The image and PDF checks need more than the 512 MB plan.
+    numInstances: 1        # The five-minute late-order check runs inside the server, so keep one instance.
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    buildCommand: npm ci --include=dev && npm run build && cp -r public .next/standalone/public && mkdir -p .next/standalone/.next && cp -r .next/static .next/standalone/.next/static && mkdir -p .next/standalone/studio-assets && cp -r studio-assets/. .next/standalone/studio-assets/
+    startCommand: node .next/standalone/server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2     # The version Brandit is tested on.
+      - key: HOSTNAME
+        value: 0.0.0.0     # The standalone server must listen on every address, not just the machine's own name.
+      - key: DEMO_MODE
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brandit-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"     # This is the private-network address. If the log ever says SSL is required, set this to "true".
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      # Asked for once, when you first create the Blueprint.
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false        # https://yourdomain.ng, or the onrender.com address until your domain is ready
+      - key: NEXT_PUBLIC_WHATSAPP
+        sync: false        # Your business WhatsApp number with country code and no plus, e.g. 2348031234567
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PIN
+        sync: false        # 6 to 12 digits, not a run like 123456
+      - key: S3_ENDPOINT
+        sync: false        # https://<your Cloudflare account id>.r2.cloudflarestorage.com
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto
+      # Added later in the Render dashboard (Environment tab), once each account exists:
+      #   PAYSTACK_SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, RESEND_API_KEY, EMAIL_FROM,
+      #   SMS_API_KEY, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, ALERT_PHONE
+      # Brandit Studio (AI designs) stays closed until at least one of these is set. See DEPLOY.md, "Brandit Studio":
+      #   RECRAFT_API_KEY, BFL_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY (also screens uploads), FAL_KEY (enlarging)
+      # Optional, shown on the Contact page and in the legal pages when set: NEXT_PUBLIC_SUPPORT_EMAIL, NEXT_PUBLIC_BUSINESS_ADDRESS
+      # Set to yes once a lawyer has reviewed the Terms, Privacy and Refunds pages (hides the draft notice): LEGAL_REVIEWED
+      # Also set once you have checked it on the console Setup page ("Your address"):  TRUSTED_PROXY_HOPS
+
+databases:
+  - name: brandit-db
+    region: frankfurt
+    plan: 0.5c-1g          # 0.5 CPU, 1 GB RAM
+    diskSizeGB: 5          # Orders are small. This can be increased later, never reduced.
+    postgresMajorVersion: "17"
+    ipAllowList: []        # Private network only: nothing on the internet can connect. See DEPLOY.md to allow your own address.

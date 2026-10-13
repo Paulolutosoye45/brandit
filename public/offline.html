@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en-NG">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0B1F33">
+<title>You are offline | Brandit</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #F3F5F7; color: #0B1F33; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 420px; text-align: center; display: grid; gap: 14px; }
+  .dot { width: 64px; height: 64px; border-radius: 999px; background: #FFC400; display: grid; place-items: center; margin: 0 auto; font-size: 30px; font-weight: 800; }
+  h1 { margin: 0; font-size: 28px; line-height: 1.1; }
+  p { margin: 0; font-size: 17px; line-height: 1.4; color: #4A5B6B; }
+  button { min-height: 52px; border: 0; border-radius: 12px; background: #0B1F33; color: #fff; font-size: 17px; font-weight: 700; padding: 0 28px; cursor: pointer; }
+  small { color: #4A5B6B; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="dot" aria-hidden="true">!</div>
+  <h1>You are offline</h1>
+  <p>Brandit needs the internet to show your price and your order. Check your data or Wi-Fi, then try again.</p>
+  <button type="button" onclick="location.reload()">Try again</button>
+  <small>Your order is safe. Nothing is lost when your connection drops.</small>
+</main>
+</body>
+</html>

@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; scroll-padding-top: 76px; }
+  body { @apply bg-paper text-ink font-sans antialiased; font-size: 16px; line-height: 1.5; }
+  h1, h2, h3 { @apply font-display font-extrabold; letter-spacing: -0.025em; text-wrap: balance; }
+  p { text-wrap: pretty; }
+  :focus-visible { outline: 3px solid #0B1F33; outline-offset: 2px; border-radius: 6px; }
+  .on-dark :focus-visible { outline-color: #FFC400; }
+  ::selection { background: #FFC400; color: #0B1F33; }
+  input[type='number']::-webkit-inner-spin-button { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+}
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-2 min-h-[48px] px-6 rounded-sm2 font-bold text-[17px] leading-tight select-none transition-[transform,box-shadow,background-color,border-color] duration-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none; }
+  /* Primary buttons are keys: they sit proud of the page and press down. */
+  .btn-primary { @apply btn bg-accent text-ink shadow-key hover:bg-accent-hi active:translate-y-[2px] active:shadow-key-down disabled:translate-y-0; }
+  .btn-secondary { @apply btn bg-surface text-ink border-2 border-ink hover:bg-paper2 active:translate-y-px; }
+  .btn-dark { @apply btn bg-ink text-white hover:bg-ink2 active:translate-y-px; }
+  .btn-ghost { @apply btn text-ink hover:bg-paper2; }
+  .btn-sm { @apply min-h-[44px] px-4 text-[15px]; }
+  .field { @apply w-full min-h-[48px] rounded-sm2 border-2 border-line-control bg-surface px-4 text-[17px] text-ink placeholder:text-[#6b7b8c] hover:border-ink transition-[border-color,box-shadow]; }
+  .field:focus-visible { outline: none; border-color: #0B1F33; box-shadow: 0 0 0 4px rgba(255, 196, 0, 0.55); }
+  .field[aria-invalid='true'] { border-color: #8A2C00; }
+  .label { @apply block text-[14px] font-bold text-muted mb-1.5; }
+  .card { @apply bg-surface border border-line rounded-md2; }
+  .pill { @apply inline-flex items-center rounded-full px-3 py-1 text-[13px] font-bold leading-tight whitespace-nowrap; }
+  .choice { @apply min-h-[48px] px-4 rounded-sm2 border-2 border-line-control bg-surface font-bold text-ink inline-flex items-center justify-center cursor-pointer select-none hover:border-ink transition-colors duration-100; }
+  .choice[aria-pressed='true'], .choice[data-on='true'] { @apply bg-ink text-white border-ink; }
+  .link { @apply font-bold underline decoration-2 underline-offset-4 decoration-accent hover:decoration-ink; }
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+@media print {
+  header, footer, nav, .no-print { display: none !important; }
+  body { background: white; }
+}

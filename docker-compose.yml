@@ -1,0 +1,51 @@
+# One server, one command: Brandit + its database + automatic HTTPS.
+#   1. cp .env.example .env     and fill it in (see DEPLOY.md)
+#   2. point your domain's DNS at this server
+#   3. docker compose up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: brandit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: brandit
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brandit -d brandit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DEMO_MODE: "false"
+      DATABASE_URL: postgres://brandit:${POSTGRES_PASSWORD}@db:5432/brandit
+      DATABASE_SSL: "false"
+    volumes:
+      - uploads:/app/.data/uploads
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env, for example brandit.ng}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  dbdata:
+  uploads:
+  caddydata:
+  caddyconfig:
