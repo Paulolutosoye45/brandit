@@ -15,7 +15,7 @@ Prices are from vendor and comparison sites in August and September 2026. Check 
 
 ## Path A: Render, R2 and Cloudflare
 
-You will have: the site and the late-order check on one Render web service (Frankfurt), a Render Postgres database (Frankfurt, private network only), artwork files in a private Cloudflare R2 bucket, and Cloudflare handling your domain.
+You will have: the site and the late-order check on one Render web service (Frankfurt), a Render Postgres database (Frankfurt; set `ipAllowList: []` in `render.yaml` to keep it private, see step 8), artwork files in a private Cloudflare R2 bucket, and Cloudflare handling your domain.
 
 | Part | Plan | About a month |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ Behind Cloudflare's free plan, a single upload cannot be larger than 100 MB. Bra
 **8. Backups and watching it.**
 
 - Open the database in Render and look at **Recovery** to see which backups your plan keeps and for how long. Before launch, restore one into a new test database to prove it works.
-- The database accepts connections only from inside Render. To take a manual copy or run a query from your own computer, open the database's **Access Control**, add your public IP address, use the **External** connection string, and remove the address afterwards. `./scripts/backup.sh` needs `DATABASE_URL` set to that external string.
+- For a site on Render, the database should accept connections only from inside Render: set `ipAllowList: []` in `render.yaml` (this package ships it open, for Vercel; see Path D). To take a manual copy or run a query from your own computer, add your public IP address in the database's **Networking** section, use the **External** connection string, and remove the address afterwards. `./scripts/backup.sh` needs `DATABASE_URL` set to that external string.
 - Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health`, with an alert that texts you if it stops answering. Check for the text `"ok":true`.
 - In Render, turn on email or Slack notifications for failed deploys.
 
@@ -117,7 +117,7 @@ You know it worked when the log shows a line starting `[brandit] LIVE` and `http
 Read the limits first. **Uploads are capped at 4 MB** on Vercel (the platform refuses any request over about 4.5 MB, and Brandit's customers upload print artwork that is often larger). **Brandit Studio's picture jobs can stall**, because Vercel pauses a server copy as soon as it has replied. **The free (Hobby) plan allows scheduled checks only once a day**, and Brandit's late-order check runs every five minutes. For a site taking real print orders, use Path A. Use Vercel to try the site, or for jobs with small files.
 
 **1. A database Vercel can reach.** Vercel has no disk that keeps files, so the built-in database cannot run. You need a hosted Postgres.
-- On Render, open the database and copy the **External Database URL**. Its host ends in `.render.com`. The **Internal** URL (a host like `dpg-abc123-a`) only works for services running inside Render and gives a 500 from Vercel. In the database's **Access Control**, allow connections from anywhere (`0.0.0.0/0`), because Vercel connects from changing addresses.
+- On Render, open the database and copy the **External Database URL**. Its host ends in `.render.com`. The **Internal** URL (a host like `dpg-abc123-a`) only works for services running inside Render and gives a 500 from Vercel. In the database's **Info** page, under **Networking**, allow connections from anywhere (`0.0.0.0/0`), because Vercel connects from changing addresses. If the database was made by the Render Blueprint, `render.yaml` sets this rule every time the Blueprint syncs: this package's `render.yaml` already allows it, but an older copy (with `ipAllowList: []`) locks Vercel out again, and the log then says the connection timed out.
 - On Neon or Supabase, use the direct connection or the session-mode address, not a transaction pooler. Brandit uses database locks that a transaction pooler breaks.
 - Put the database in Frankfurt to match `vercel.json` (`"regions": ["fra1"]`). If yours is elsewhere, change that region to the nearest Vercel region, or every page waits on a long trip to the database.
 
@@ -130,7 +130,7 @@ Read the limits first. **Uploads are capped at 4 MB** on Vercel (the platform re
 | `DEMO_MODE` | `false` (never `true` next to a real database: the site refuses to start) |
 | `NEXT_PUBLIC_APP_URL` | Your site address, such as `https://your-project.vercel.app` or your own domain |
 | `SESSION_SECRET` | A long random string (`openssl rand -hex 32`) |
-| `DATABASE_URL` | The External Database URL from step 1 |
+| `DATABASE_URL` | The External Database URL from step 1 (its host ends in `.render.com`). Do not add `DATABASE_SSL`: Brandit always uses SSL for Render's external address. With Vercel's Neon integration, the integration sets this for you, and Brandit picks its direct (unpooled) address by itself |
 | `ADMIN_EMAIL`, `ADMIN_PIN` | Your team console sign-in. The PIN is 6 to 12 digits, not a run like `123456` |
 | `CRON_SECRET` | Any long random string. Vercel sends it with the scheduled check |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | From step 2 |
@@ -141,7 +141,7 @@ Optional: `DATABASE_POOL_MAX` (connections each server copy may open; default 4 
 
 **4. Redeploy.** A change to an environment variable reaches the site only on the next deploy: open Deployments, the three dots on the latest one, then Redeploy. Addresses that start with `NEXT_PUBLIC_` are built in, so they need a redeploy as well.
 
-**5. Check it.** Open `https://your-site/api/health`. It should answer `{"ok":true,"db":"up","mode":"live"}`. Then sign in at `/console/login` and work down the **Setup** page. On Vercel the Setup page also tells you about the upload cap and Studio.
+**5. Check it.** Open `https://your-site/api/health`. It should answer `{"ok":true,"db":"up","mode":"live"}`. If the database cannot be reached it answers `"db":"down"` with a `problem` that says, in plain words, what to fix. Then sign in at `/console/login` and work down the **Setup** page. On Vercel the Setup page also tells you about the upload cap and Studio.
 
 **6. The five-minute check.** On the Pro plan nothing more is needed: `vercel.json` schedules it. On the free plan a schedule more frequent than daily makes the deploy fail with "Hobby accounts are limited to daily cron jobs". Delete the `crons` block from `vercel.json` and have a free pinger such as cron-job.org call `https://your-site/api/cron/sweep` every five minutes with the header `Authorization: Bearer <your CRON_SECRET>`.
 
@@ -150,13 +150,22 @@ Optional: `DATABASE_POOL_MAX` (connections each server copy may open; default 4 
 | What you see | What to do |
 | --- | --- |
 | A page saying **"Brandit is not set up yet"** | A required setting is missing. The page lists which (names only). Add them in Environment Variables, then redeploy. |
-| A plain **"500 Internal Server Error"** | The server stopped while starting. In Vercel open the project, then **Logs**, set the filter to Errors, reload the site and open the newest line. Brandit writes `[brandit] Cannot start` followed by what is wrong and what to do. |
-| The log mentions `ENOTFOUND dpg-...` | That is Render's Internal Database URL. Use the External one (step 1). |
-| The log says the database timed out or refused the connection | The URL is the wrong one, the database is not running, or it does not accept outside connections. Check Access Control. |
+| A plain **"500 Internal Server Error"** | Open `/api/health` first: if the database is the problem, it says what to do. Otherwise, in Vercel open the project, then **Logs**, search for `brandit`, reload the site and read the newest lines. |
+| The "not set up yet" page or the log mentions Render's Internal Database URL, or `ENOTFOUND dpg-...` | Use the External one (step 1): its host ends in `.render.com`. |
+| `/api/health` or the log says the database timed out or refused the connection | The URL saved in Vercel is not the External one, the database is not running, or it does not accept outside connections (Render: the database's Info page, Networking). To prove the database itself works, run the test in "Testing a database address" below from your own computer. |
 | The log says `password authentication failed` | Copy `DATABASE_URL` again from the database page. |
 | The log says `too many connections` | Set `DATABASE_POOL_MAX` to `2`, or use fewer database connections on your plan. |
 | Uploads of big files are refused | Expected on Vercel: the limit is 4 MB. See the top of this section. |
 | The deploy fails on the cron line | Free plan: see step 6. |
+
+**Testing a database address.** From the project folder on your computer (after `npm install`), in PowerShell:
+
+```
+$env:DATABASE_URL = "your External Database URL"
+node -e "const {Client}=require('pg');const c=new Client({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false},connectionTimeoutMillis:15000});c.connect().then(()=>c.query('select now()')).then(r=>{console.log('WORKS. Database time:',r.rows[0].now);process.exit(0)}).catch(e=>{console.log('FAILED:',e.message);process.exit(1)})"
+```
+
+`WORKS` means the database and the address are fine, so the problem is the value saved in Vercel (or a missing redeploy). On macOS or Linux, write `export DATABASE_URL="..."` instead of the first line.
 
 ## The accounts you need (all paths)
 

@@ -1,5 +1,5 @@
 import { MIGRATIONS } from './schema';
-import { isDemoEnv } from './envcheck';
+import { isDemoEnv, databaseUrl, dbSsl } from './envcheck';
 
 export type Row = Record<string, any>;
 export interface Q {
@@ -27,19 +27,20 @@ export const isDemo = (env: NodeJS.ProcessEnv = process.env) => isDemoEnv(env);
 
 /** Refuse a combination that would put demo logins on a real database. */
 export function assertSafeMode(env: NodeJS.ProcessEnv = process.env) {
-  if (env.NODE_ENV === 'production' && env.DEMO_MODE === 'true' && env.DATABASE_URL) {
+  if (env.NODE_ENV === 'production' && env.DEMO_MODE === 'true' && databaseUrl(env)) {
     throw new Error('DEMO_MODE=true cannot be used with a hosted database (DATABASE_URL) in production. Set DEMO_MODE=false.');
   }
 }
 
 async function open(): Promise<Driver> {
   assertSafeMode();
-  if (process.env.DATABASE_URL) {
+  const url = databaseUrl(process.env);
+  if (url) {
     const { Pool } = await import('pg');
-    const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
+    const ssl = dbSsl(process.env);
     // Vercel starts many short-lived copies of the server, and each keeps its own pool, so keep each one small.
     const max = Math.max(1, Math.min(50, Math.floor(Number(process.env.DATABASE_POOL_MAX)) || (process.env.VERCEL ? 4 : 10)));
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, statement_timeout: 30_000 });
+    const pool = new Pool({ connectionString: url, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, statement_timeout: 30_000 });
     attachPoolGuards(pool);
     return {
       query: async <T extends Row = Row>(sql: string, params?: unknown[]) => (await pool.query(sql, params as any[])).rows as T[],

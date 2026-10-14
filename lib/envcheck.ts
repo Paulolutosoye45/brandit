@@ -19,20 +19,47 @@ export const isDemoEnv = (env: NodeJS.ProcessEnv) => {
 export const onVercel = (env: NodeJS.ProcessEnv) => !!env.VERCEL;
 
 /**
+ * The database address. Vercel's Neon integration sets both a pooled DATABASE_URL and a direct DATABASE_URL_UNPOOLED;
+ * Brandit needs the direct one, because its database locks do not survive a transaction pooler.
+ */
+export function databaseUrl(env: NodeJS.ProcessEnv): string {
+  return env.DATABASE_URL_UNPOOLED || env.POSTGRES_URL_NON_POOLING || env.DATABASE_URL || '';
+}
+
+/** The host name inside a database address, or '' if there is none. Never the password. */
+export function dbHost(url: string): string {
+  if (!url) return '';
+  try { return new URL(url).hostname; } catch { return /@([^/:?#]+)/.exec(url)?.[1] ?? ''; }
+}
+
+/** Render's internal addresses are a bare name such as dpg-abc123-a, with no dots. They only work inside Render. */
+export const isRenderInternal = (host: string) => /^dpg-[a-z0-9]+-[a-z]$/i.test(host);
+
+/** SSL for the database. Render refuses outside connections without SSL, so its external address always gets it. */
+export function dbSsl(env: NodeJS.ProcessEnv): false | { rejectUnauthorized: false } {
+  if (/\.render\.com$/i.test(dbHost(databaseUrl(env)))) return { rejectUnauthorized: false };
+  return env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
+}
+
+/**
  * What must be right for the site to start at all. An empty list means go ahead.
  * Nothing here ever includes a value, only the names of the settings.
  */
 export function envProblems(env: NodeJS.ProcessEnv): string[] {
   const p: string[] = [];
-  if (env.NODE_ENV === 'production' && env.DEMO_MODE === 'true' && env.DATABASE_URL) {
+  const url = databaseUrl(env);
+  if (env.NODE_ENV === 'production' && env.DEMO_MODE === 'true' && url) {
     p.push('DEMO_MODE is true while DATABASE_URL is set. Demo mode is for trying things on your own computer, and it is refused next to a real database. Set DEMO_MODE to false.');
   }
   if (isDemoEnv(env)) {
-    if (onVercel(env) && !env.DATABASE_URL) p.push('Vercel has no disk that keeps files, so the built-in database cannot run there. Set DATABASE_URL to a hosted Postgres database.');
+    if (onVercel(env) && !url) p.push('Vercel has no disk that keeps files, so the built-in database cannot run there. Set DATABASE_URL to a hosted Postgres database.');
     return p;
   }
   if ((env.SESSION_SECRET ?? '').length < 16) p.push('SESSION_SECRET must be set to a long random string (16 characters or more).');
-  if (!env.DATABASE_URL) p.push('DATABASE_URL must point to a hosted Postgres database. The built-in local database is for trying things out only.');
+  if (!url) p.push('DATABASE_URL must point to a hosted Postgres database. The built-in local database is for trying things out only.');
+  else if (!env.RENDER && isRenderInternal(dbHost(url))) {
+    p.push('DATABASE_URL is Render\'s Internal Database URL, which only works for services running inside Render. In Render, open the database, click Connect, choose External, and copy that address instead: its host ends in ".render.com".');
+  }
   return p;
 }
 
@@ -55,12 +82,12 @@ export function dbHint(err: unknown, env: NodeJS.ProcessEnv = process.env): stri
   if (/self[- ]signed|certificate|SSL/i.test(msg)) return 'The SSL handshake failed. Set DATABASE_SSL to true (hosted databases) or false (a database with no SSL).';
   if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(msg)) {
     return onVercel(env)
-      ? 'The database refused the connection. Check the host and port in DATABASE_URL. Vercel connects from changing addresses, so the database must accept connections from anywhere (on Render: the database\'s Access Control must include 0.0.0.0/0).'
+      ? 'The database refused the connection. Check the host and port in DATABASE_URL. Vercel connects from changing addresses, so the database must accept connections from anywhere (on Render: the database\'s Info page, Networking, must allow 0.0.0.0/0).'
       : 'The database refused the connection. Check the host and port in DATABASE_URL, and that the database is running.';
   }
   if (code === 'ETIMEDOUT' || /ETIMEDOUT|timeout|timed out|terminated/i.test(msg)) {
     return onVercel(env)
-      ? 'The database did not answer in time. Check that the database is running, that DATABASE_URL is its External address, and that it accepts connections from anywhere (Vercel connects from changing addresses; on Render, Access Control must include 0.0.0.0/0).'
+      ? 'The database did not answer in time. Check that the database is running, that DATABASE_URL is its External address, and that it accepts connections from anywhere (Vercel connects from changing addresses; on Render, the database\'s Networking section must allow 0.0.0.0/0).'
       : 'The database did not answer in time. Check that it is running and that DATABASE_URL is right.';
   }
   return undefined;

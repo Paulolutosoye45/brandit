@@ -71,4 +71,10 @@ databases:
     plan: 0.5c-1g          # 0.5 CPU, 1 GB RAM
     diskSizeGB: 5          # Orders are small. This can be increased later, never reduced.
     postgresMajorVersion: "17"
-    ipAllowList: []        # Private network only: nothing on the internet can connect. See DEPLOY.md to allow your own address.
+    # Open to the internet, because the site runs on Vercel, which connects from changing addresses.
+    # Every connection still needs the password, and Render insists on SSL from outside.
+    # Render applies this list each time the Blueprint syncs, so a change made only in the dashboard is undone.
+    # If the site moves to Render (Path A), set it to [] so only services inside Render can connect.
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Vercel (changing addresses)

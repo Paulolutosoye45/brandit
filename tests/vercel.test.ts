@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { envProblems, dbHint, setupPage, isDemoEnv } from '../lib/envcheck';
+import { envProblems, dbHint, setupPage, isDemoEnv, databaseUrl, dbSsl, dbHost } from '../lib/envcheck';
 import { fatalProblems } from '../lib/setup';
 import { applyHostLimits, VERCEL_UPLOAD_MB } from '../lib/settings';
 import { DEFAULT_SETTINGS } from '../lib/settings-defaults';
@@ -38,6 +38,36 @@ describe('what a live site cannot start without', () => {
   it('is the same rule the server start-up uses', () => {
     expect(fatalProblems(env({ NODE_ENV: 'production' }))).toEqual(envProblems(env({ NODE_ENV: 'production' })));
     expect(isDemoEnv(env({ NODE_ENV: 'production' }))).toBe(false);
+  });
+});
+
+describe('which database address and SSL are used', () => {
+  const INTERNAL = 'postgresql://brandit_user:secret@dpg-db4ikr7avr4c73fcnai0-a/brandit';
+  const EXTERNAL = 'postgresql://brandit_user:secret@dpg-db4ikr7avr4c73fcnai0-a.frankfurt-postgres.render.com/brandit';
+  it('stops a Render Internal URL before it can time out, anywhere but inside Render', () => {
+    const p = envProblems(env({ ...LIVE, VERCEL: '1', DATABASE_URL: INTERNAL }));
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatch(/Internal Database URL/);
+    expect(p[0]).toMatch(/External/);
+    expect(p[0]).not.toMatch(/secret/);
+    expect(envProblems(env({ ...LIVE, RENDER: 'true', DATABASE_URL: INTERNAL }))).toEqual([]);
+    expect(envProblems(env({ ...LIVE, VERCEL: '1', DATABASE_URL: EXTERNAL }))).toEqual([]);
+  });
+  it('always uses SSL for Render\'s external address, even when DATABASE_SSL says false', () => {
+    expect(dbSsl(env({ DATABASE_URL: EXTERNAL, DATABASE_SSL: 'false' }))).toEqual({ rejectUnauthorized: false });
+    expect(dbSsl(env({ DATABASE_URL: 'postgres://u:p@localhost:5432/db', DATABASE_SSL: 'false' }))).toBe(false);
+    expect(dbSsl(env({ DATABASE_URL: 'postgres://u:p@db.example.com/db' }))).toEqual({ rejectUnauthorized: false });
+  });
+  it('prefers the direct address that Vercel\'s Neon integration sets beside the pooled one', () => {
+    expect(databaseUrl(env({ DATABASE_URL: 'postgres://u:p@ep-x-pooler.eu-central-1.aws.neon.tech/db', DATABASE_URL_UNPOOLED: 'postgres://u:p@ep-x.eu-central-1.aws.neon.tech/db' }))).toMatch(/ep-x\.eu-central/);
+    expect(databaseUrl(env({ DATABASE_URL: EXTERNAL }))).toBe(EXTERNAL);
+    expect(envProblems(env({ NODE_ENV: 'production', DEMO_MODE: 'false', SESSION_SECRET: 'x'.repeat(40), DATABASE_URL_UNPOOLED: EXTERNAL }))).toEqual([]);
+  });
+  it('reads the host without ever returning the password', () => {
+    expect(dbHost(EXTERNAL)).toBe('dpg-db4ikr7avr4c73fcnai0-a.frankfurt-postgres.render.com');
+    expect(dbHost(INTERNAL)).toBe('dpg-db4ikr7avr4c73fcnai0-a');
+    expect(dbHost('postgres://u:p@ss#word@host.example.com/db')).not.toMatch(/word/);
+    expect(dbHost('')).toBe('');
   });
 });
 

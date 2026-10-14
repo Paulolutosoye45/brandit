@@ -5,7 +5,7 @@ import { channelOn } from './otp';
 import { paystackOn } from './payments';
 import { s3On } from './storage';
 import { smsOn, whatsappOn } from './messages';
-import { envProblems, onVercel } from './envcheck';
+import { envProblems, onVercel, databaseUrl } from './envcheck';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getSettings } from './settings';
@@ -32,7 +32,7 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
     ? { id: 'secret', group: 'Basics', label: 'Session secret', status: 'ok', detail: 'Set.' }
     : { id: 'secret', group: 'Basics', label: 'Session secret', status: demo ? 'info' : 'bad', detail: 'Not set or too short.', fix: 'Set SESSION_SECRET to a long random string (openssl rand -hex 32).' });
 
-  add(env.DATABASE_URL
+  add(databaseUrl(env)
     ? { id: 'db', group: 'Basics', label: 'Database', status: 'ok', detail: 'Hosted Postgres.' }
     : { id: 'db', group: 'Basics', label: 'Database', status: demo ? 'info' : 'bad', detail: 'Using the built-in local database.', fix: 'Set DATABASE_URL to a hosted Postgres (Supabase, Railway, Render). The built-in database is lost when a server is replaced.' });
 

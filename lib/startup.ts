@@ -1,6 +1,6 @@
 import { isDemo, ready } from './db';
 import { fatalProblems } from './setup';
-import { dbHint } from './envcheck';
+import { dbHint, databaseUrl } from './envcheck';
 import { startInternalScheduler } from './scheduler';
 import { googleOn } from './google';
 import { channelOn } from './otp';
@@ -20,11 +20,12 @@ export async function startup() {
   try {
     await ready();
   } catch (e) {
+    // Do not crash: a crash shows visitors a bare "500" and hides the reason. Instead every request tries the database
+    // again, /api/health says in plain words what is wrong (and fails, so a host such as Render keeps the old version).
     const hint = dbHint(e);
-    console.error(`\n[brandit] Cannot start: the database did not open.\n  ${(e as Error)?.message ?? e}${hint ? `\n  What to do: ${hint}` : ''}\n`);
-    throw e;
+    console.error(`\n[brandit] The database did not open. The site will keep trying; /api/health says why.\n  ${(e as Error)?.message ?? e}${hint ? `\n  What to do: ${hint}` : ''}\n`);
   }
   const on = (b: boolean, n: string) => (b ? n : null);
   const signin = [on(googleOn(), 'google'), on(channelOn('email'), 'email'), on(channelOn('phone'), 'phone')].filter(Boolean).join(', ') || (isDemo() ? 'demo' : 'none');
-  console.log(`[brandit] ${isDemo() ? 'DEMO' : 'LIVE'} | db: ${process.env.DATABASE_URL ? 'hosted' : 'built-in'} | payments: ${paystackOn() ? 'paystack' : isDemo() ? 'pretend' : 'OFF'} | sign-in: ${signin} | files: ${s3On() ? 's3' : 'disk'} | messages: ${whatsappOn() ? 'whatsapp' : smsOn() ? 'sms' : 'none'} | scheduler: ${startInternalScheduler()}`);
+  console.log(`[brandit] ${isDemo() ? 'DEMO' : 'LIVE'} | db: ${databaseUrl(process.env) ? 'hosted' : 'built-in'} | payments: ${paystackOn() ? 'paystack' : isDemo() ? 'pretend' : 'OFF'} | sign-in: ${signin} | files: ${s3On() ? 's3' : 'disk'} | messages: ${whatsappOn() ? 'whatsapp' : smsOn() ? 'sms' : 'none'} | scheduler: ${startInternalScheduler()}`);
 }
