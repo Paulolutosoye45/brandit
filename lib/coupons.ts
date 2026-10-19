@@ -25,6 +25,8 @@ export type Context = {
   designKobo: number;
   deliveryKobo: number;
   productId: string;
+  /** Every line of the basket. A code limited to some products counts only those lines. */
+  lines?: { productId: string; kobo: number }[];
   orderId?: string | null;
   identity?: Identity;
   now?: Date;
@@ -32,6 +34,17 @@ export type Context = {
   custom?: boolean;
 };
 export type Verdict = { ok: true; coupon: Coupon; discountKobo: number } | { ok: false; message: string };
+
+/**
+ * The part of the basket a code can take money off. Null when the code is limited to products and nothing in the basket is one of them.
+ * Codes for every product count the whole print price.
+ */
+export function couponBase(coupon: Pick<Coupon, 'product_ids'>, ctx: Pick<Context, 'subtotalKobo' | 'productId' | 'lines'>): number | null {
+  if (!coupon.product_ids || coupon.product_ids.length === 0) return ctx.subtotalKobo;
+  const lines = ctx.lines ?? [{ productId: ctx.productId, kobo: ctx.subtotalKobo }];
+  const mine = lines.filter((l) => coupon.product_ids.includes(l.productId));
+  return mine.length === 0 ? null : mine.reduce((a, l) => a + l.kobo, 0);
+}
 
 const NOT_VALID = 'That code is not valid. Check the spelling and try again.';
 
@@ -52,8 +65,10 @@ export async function validateCoupon(code: string, ctx: Context): Promise<Verdic
   if (blocked) return { ok: false, message: blocked };
   if (coupon.starts_at && new Date(coupon.starts_at) > now) return { ok: false, message: 'This code is not active yet.' };
   if (coupon.ends_at && new Date(coupon.ends_at) < now) return { ok: false, message: 'This code has expired.' };
-  if (coupon.product_ids.length > 0 && !coupon.product_ids.includes(ctx.productId)) return { ok: false, message: 'This code does not apply to this product.' };
-  if (ctx.subtotalKobo < coupon.min_subtotal_kobo) return { ok: false, message: `Spend at least ${naira(coupon.min_subtotal_kobo)} on the print to use this code.` };
+  // A code limited to some products takes money off those lines only, and the minimum spend counts only those lines too.
+  const base = couponBase(coupon, ctx);
+  if (coupon.product_ids.length > 0 && base === null) return { ok: false, message: ctx.lines && ctx.lines.length > 1 ? 'This code does not apply to anything in your basket.' : 'This code does not apply to this product.' };
+  if ((base ?? ctx.subtotalKobo) < coupon.min_subtotal_kobo) return { ok: false, message: `Spend at least ${naira(coupon.min_subtotal_kobo)} on the print to use this code.` };
 
   if (coupon.max_redemptions != null) {
     const used = await one<{ n: number }>("select count(*)::int as n from coupon_redemptions where coupon_id = $1 and order_id is distinct from $2::uuid", [coupon.id, ctx.orderId ?? null]);
@@ -85,7 +100,7 @@ export async function validateCoupon(code: string, ctx: Context): Promise<Verdic
     // Not signed in and no details yet: allowed for now. It is checked again when they enter their details to pay.
   }
 
-  const discountKobo = discountFor(coupon, ctx);
+  const discountKobo = discountFor(coupon, { ...ctx, subtotalKobo: base ?? ctx.subtotalKobo });
   if (!(discountKobo > 0)) {
     return { ok: false, message: coupon.kind === 'free_delivery' ? 'There is no delivery fee to take off. Choose delivery to use this code.' : NOT_VALID };
   }
@@ -97,6 +112,8 @@ export const publicCoupon = (c: Coupon) => ({
   code: c.code,
   label: c.description?.trim() || couponLabel(c),
   rule: { kind: c.kind, percent_off: c.percent_off, amount_off_kobo: c.amount_off_kobo, max_discount_kobo: c.max_discount_kobo, min_subtotal_kobo: c.min_subtotal_kobo },
+  /** Empty for a code that works on every product. Otherwise the products it takes money off. */
+  productIds: (c.product_ids ?? []) as string[],
 });
 
 /** Record that a paid order used a coupon. Called inside the payment transaction, so it is all-or-nothing with "paid". */

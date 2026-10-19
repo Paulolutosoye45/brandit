@@ -8,7 +8,7 @@ import { nudgeStats } from '@/lib/nudge';
 import { referralStats } from '@/lib/referrals';
 import { eventPlanStats } from '@/lib/eventPlan';
 import { campaignViews, listCampaigns, phaseNow } from '@/lib/campaigns';
-import { saveNudgeAction, saveReferralAction, saveSwitchesAction } from './actions';
+import { saveNudgeAction, saveReferralAction, saveRemindersAction, saveSwitchesAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Growth' };
@@ -24,7 +24,7 @@ const Check = ({ name, on, children }: { name: string; on: boolean; children: Re
 export default async function Growth(props: { searchParams: Promise<{ e?: string; ok?: string }> }) {
   const sp = await props.searchParams;
   await requireStaff('manage_growth');
-  const [s, nudge, ref, plans, views, campaigns, tpl, photos, windows] = await Promise.all([
+  const [s, nudge, ref, plans, views, campaigns, tpl, photos, windows, rem] = await Promise.all([
     getSettings(), nudgeStats(30), referralStats(90), eventPlanStats(30), campaignViews(30), listCampaigns(),
     query<{ title: string; slug: string; started: number; paid: number }>(
       `select t.title, t.slug, count(o.id)::int as started, count(o.id) filter (where o.status in ('paid','in_production','delivered'))::int as paid
@@ -32,6 +32,13 @@ export default async function Growth(props: { searchParams: Promise<{ e?: string
         group by t.id order by started desc, t.sort limit 8`),
     query<{ n: number }>("select count(*)::int as n from reviews where photo_status = 'pending'"),
     query<{ w: string; n: number }>("select delivery_window as w, count(*)::int as n from orders where delivery_window is not null and created_at > now() - interval '30 days' group by 1"),
+    query<{ weekly: number; sent: number; ordered: number; credits: number; creditKobo: number; used: number }>(
+      `select (select count(*)::int from reminders where kind = 'weekly' and active) as weekly,
+              (select count(*)::int from reminders where last_sent_at > now() - interval '30 days') as sent,
+              (select count(distinct r.id)::int from reminders r join orders n on n.customer_id = r.customer_id and n.paid_at > r.last_sent_at and n.paid_at < r.last_sent_at + interval '7 days' where r.last_sent_at > now() - interval '30 days') as ordered,
+              (select count(*)::int from coupons where source = 'sample' and created_at > now() - interval '90 days') as credits,
+              (select coalesce(sum(amount_off_kobo), 0)::int from coupons where source = 'sample' and created_at > now() - interval '90 days') as "creditKobo",
+              (select count(*)::int from coupon_redemptions r join coupons c on c.id = r.coupon_id where c.source = 'sample') as used`),
   ]);
   const nWin = (w: string) => windows.find((x) => x.w === w)?.n ?? 0;
   return (
@@ -55,6 +62,27 @@ export default async function Growth(props: { searchParams: Promise<{ e?: string
         <form action={saveNudgeAction} className="grid gap-4">
           <Check name="nudge_enabled" on={s.nudge_enabled}><span className="font-bold">Send the reminder.</span> Turn it off and none are sent.</Check>
           <div className="max-w-[320px]"><label className="label" htmlFor="nm">Wait this long after they stop (minutes)</label><input id="nm" name="nudge_after_minutes" type="number" min={30} max={1440} className="field" defaultValue={s.nudge_after_minutes} /></div>
+          <button className="btn-primary self-start">Save</button>
+        </form>
+      </section>
+
+      <section id="reminders" className="card p-5 grid gap-4 scroll-mt-6">
+        <div><h2 className="text-[24px]">Repeat orders and the sample pack</h2><p className="text-[14px] text-muted">Two ways to turn a first order into a regular customer. <b>Weekly reminders</b> are chosen by the customer for an order they repeat (a church programme, a weekly flyer). <b>Running low</b> is one message, a set number of days after delivery, only to people who agreed to hear from us and have not ordered since. Every message has a link that stops them. Nothing goes out at night. The <b>sample pack</b> credit is a single-use code for what the customer paid for the pack, sent when the box leaves for delivery.</p></div>
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat label="Weekly reminders on" value={rem[0]?.weekly ?? 0} />
+          <Stat label="Reminders sent (30 days)" value={rem[0]?.sent ?? 0} />
+          <Stat label="Ordered within a week" value={rem[0]?.ordered ?? 0} />
+          <Stat label="Sample credits (90 days)" value={rem[0]?.credits ?? 0} />
+          <Stat label="Credit given" value={naira(rem[0]?.creditKobo ?? 0)} />
+          <Stat label="Credits used" value={rem[0]?.used ?? 0} />
+        </div>
+        <form action={saveRemindersAction} className="grid gap-4">
+          <Check name="reminders_enabled" on={s.reminders_enabled}><span className="font-bold">Send repeat reminders.</span> Turn it off and none are sent, weekly or running-low.</Check>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><label className="label" htmlFor="rd">Running low: days after delivery</label><input id="rd" name="reminder_days" type="number" min={14} max={365} className="field" defaultValue={s.reminder_days} /></div>
+            <div><label className="label" htmlFor="sc">Sample-pack credit stays valid (days)</label><input id="sc" name="sample_credit_days" type="number" min={7} max={365} className="field" defaultValue={s.sample_credit_days} /></div>
+          </div>
+          <p className="text-[14px] text-muted">The sample pack itself is a product: set its price and switch it on under <Link href="/console/products" className="link">Products</Link>. It needs no artwork.</p>
           <button className="btn-primary self-start">Save</button>
         </form>
       </section>

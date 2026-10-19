@@ -53,6 +53,9 @@ class Session {
   }
 }
 
+/** A customer who has signed in (demo Google), the way paying now requires. */
+async function signedIn(name: string) { const s = new Session(); await s.form('/signin/demo-google', name, {}); return s; }
+
 (async () => {
   const guest = new Session();
 
@@ -96,8 +99,17 @@ class Session {
   ok(q3.body.tier === 'standard' && q3.body.reasonTexts.some((t: string) => /sq ft/.test(t)), '200 sq ft of banners → standard, with the reason in words');
   const q4 = await guest.json('/api/quote', { slug: 'picture-frames', quantity: 1, sizeKey: '24x36', area: 'Yaba' });
   ok(q4.body.priceKobo === 5_600_000 && q4.body.tier === 'standard', '24 × 36 frame = ₦56,000, standard delivery');
-  const q5 = await guest.json('/api/quote', { slug: 'business-cards', quantity: 150, area: 'Yaba' });
+  const q5 = await guest.json('/api/quote', { slug: 'business-cards', quantity: 20, area: 'Yaba' });
   ok(q5.body.ok === false, 'A quantity with no price is refused, not guessed');
+  const q5b = await guest.json('/api/quote', { slug: 'business-cards', quantity: 150, area: 'Yaba' });
+  ok(q5b.body.ok && q5b.body.priceKobo === 2_250_000 && q5b.body.basis === 'between' && q5b.body.fromStep === 100, '150 cards (between steps) = 150 × the 100-step price per card = ₦22,500');
+  const qd = await guest.json('/api/quote', { slug: 'business-cards', quantity: 100, area: 'Yaba', detail: true });
+  ok(qd.body.ok && Array.isArray(qd.body.ladder) && qd.body.ladder.length >= 4 && qd.body.ladder[0].quantity === 50 && qd.body.ladder.some((x: any) => x.quantity === 100 && x.totalKobo === 1_500_000) && qd.body.ladder.slice(1).every((s: any) => s.savePct == null || s.savePct > 0), 'The quote carries the quantity ladder with savings');
+  ok(Array.isArray(qd.body.packages) && qd.body.availability && Array.isArray(qd.body.availability.quantities), 'The quote carries packages and what can be chosen');
+  ok(!JSON.stringify(qd.body).includes('cost_kobo') && qd.body.costKobo === undefined, 'No cost leaves the server in a quote');
+  const bcPage = await guest.html('/products/business-cards');
+  ok(bcPage.status === 200 && /From ₦8,600 for 50/.test(bcPage.text), 'The product page says "From ₦8,600 for 50" (the demo\'s cheapest step)');
+  ok(!/cost_kobo|costKobo/.test(bcPage.text), 'No cost is in the product page');
   const q6 = await guest.json('/api/quote', { slug: 'business-cards', quantity: 100, area: 'Ikorodu' });
   ok(q6.body.tier === 'standard' && q6.body.reasonTexts.some((t: string) => /area|pick it up|closer/i.test(t)), 'Outer Lagos → standard, with how to qualify');
 
@@ -118,9 +130,18 @@ class Session {
   ok(approve.body.next === `/checkout/${id}`, 'Approving the preview moves on to checkout');
   ok((await guest.html(`/checkout/${id}`)).status === 200, 'Checkout page loads');
 
-  const bad = await guest.json(`/api/orders/${id}/checkout`, { name: 'Ada Obi', phone: '123', email: 'ada@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
+  const noSignIn = await guest.json(`/api/orders/${id}/checkout`, { name: 'Ada Obi', phone: '0803 123 4567', email: 'ada@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
+  ok(noSignIn.status === 401 && noSignIn.body.field === 'signin', 'Paying needs a sign-in (verified email or Google)');
+  const coText = words((await guest.html(`/checkout/${id}`)).text);
+  ok(coText.includes('Sign in to pay') && coText.includes('Continue with Google') && coText.includes('Send me a code'), 'Checkout shows the sign-in right there, with Google and an email code');
+  ok(!/phone number instead|Use your phone/i.test(coText + words((await guest.html('/signin')).text)), 'There is no phone-code sign-in to choose');
+  const ada = await signedIn('Ibrahim Bello');
+  ok(!!ada.cookies.bc, 'The customer signs in without leaving checkout');
+  const adaCo = words((await ada.html(`/checkout/${id}`)).text);
+  ok(!adaCo.includes('Sign in to pay') && adaCo.includes('Who is this for?'), 'Signed in, checkout shows the details form instead');
+  const bad = await ada.json(`/api/orders/${id}/checkout`, { name: 'Ada Obi', phone: '123', email: 'ada@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
   ok(bad.status === 422 && bad.body.field === 'phone', `Bad phone number is explained: "${bad.body?.error}"`);
-  const co = await guest.json(`/api/orders/${id}/checkout`, { name: 'Ada Obi', phone: '0803 123 4567', email: 'ada@example.com', company: 'Obi Studio', plainPack: true, pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba', window: 'morning' });
+  const co = await ada.json(`/api/orders/${id}/checkout`, { name: 'Ada Obi', phone: '0803 123 4567', email: 'ada@example.com', company: 'Obi Studio', plainPack: true, pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba', window: 'morning' });
   ok(co.status === 200 && /^\/pay\//.test(co.body.url), 'Checkout returns a payment link (demo page, no Paystack key)');
 
   const payPage = await guest.html(co.body.url);
@@ -276,7 +297,7 @@ class Session {
   ok((await admin.html('/console/products')).text.includes('Add a product'), 'Admin sees the product list');
   ok((await sup.html('/console/products')).status >= 300, 'Support cannot manage products');
   ok((await sup.html('/console/coupons')).status >= 300, 'Support cannot manage coupons');
-  const made = await admin.form('/console/products/new', 'Create and continue', { name: 'E2E tote bags', blurb: 'Canvas totes with your logo.', category: 'Stickers and merch', mode: 'tier' });
+  const made = await admin.form('/console/products/new', 'Create and continue', { name: 'E2E tote bags', blurb: 'Canvas totes with your logo.', category: 'Marketing prints', mode: 'tier' });
   const pid = /products\/([0-9a-f-]{36})/.exec(made.loc)?.[1] ?? '';
   ok(!!pid, 'A new product is created, hidden at first');
   ok(!(await guest.html('/products')).text.includes('E2E tote bags'), 'A hidden product is not in the shop');
@@ -296,11 +317,25 @@ class Session {
   ok(imgRes.status === 200 && imgRes.headers.get('content-type') === 'image/webp' && /immutable/.test(imgRes.headers.get('cache-control') ?? ''), 'Product photos are public WebP with long cache');
   const full = await (await fetch(`${BASE}/api/product-images/${imgId}?size=full`)).arrayBuffer();
   ok(full.byteLength > 0 && full.byteLength < 400_000, `The stored photo is small (${Math.round(full.byteLength / 1000)} KB from a 2400 px upload)`);
-  ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Save details', { name: 'E2E tote bags', category: 'Stickers and merch', blurb: 'Canvas totes with your logo.', description: 'Strong canvas totes.\n\nPrinted in full colour.', highlights: 'Full colour\nReady in 3 days', check_class: 'print', allow_custom: 'on' })).loc), 'Description and highlights save');
-  ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Save prices', { json: JSON.stringify([{ quantity: '10', price: '25000' }, { quantity: '25', price: '55000' }]) })).loc), 'Quantity prices save');
-  const badOpt = await admin.form(`/console/products/${pid}`, 'Save options', { json: JSON.stringify([{ label: 'Colour', choices: [{ label: 'Natural' }] }]) });
+  ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Save details', { name: 'E2E tote bags', category: 'Marketing prints', blurb: 'Canvas totes with your logo.', description: 'Strong canvas totes.\n\nPrinted in full colour.', highlights: 'Full colour\nReady in 3 days', check_class: 'print', allow_custom: 'on' })).loc), 'Description and highlights save');
+  // The price grid: one row (no price-changing options yet) and a column for each quantity.
+  const gridPage = `/console/products/${pid}/prices`;
+  const gp = await admin.html(gridPage);
+  ok(gp.status === 200 && gp.text.includes('Quantities and prices'), 'The price grid page opens');
+  const badGrid = await admin.form(gridPage, 'Save prices', { json: JSON.stringify({ quantities: [10, 25], cells: [{ row: '[]', col: 'q:10', price: 'about 25000', cost: '' }] }) });
+  ok(/e=/.test(badGrid.loc) && /not a price/.test(badGrid.loc), 'A price that is not a number is refused in plain words');
+  ok(/ok=/.test((await admin.form(gridPage, 'Save prices', { json: JSON.stringify({ quantities: [10, 25], cells: [{ row: '[]', col: 'q:10', price: '25000', cost: '15000' }, { row: '[]', col: 'q:25', price: '55000', cost: '' }] }) })).loc), 'Quantity prices save in the grid');
+  const optPage = `/console/products/${pid}/options`;
+  ok((await admin.html(optPage)).status === 200, 'The options and packages page opens');
+  const badOpt = await admin.form(optPage, 'Save options', { json: JSON.stringify([{ label: 'Colour', choices: [{ label: 'Natural' }] }]) });
   ok(/e=/.test(badOpt.loc) && /at least two choices/.test(badOpt.loc), 'An option with one choice is refused in plain words');
-  ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Save options', { json: JSON.stringify([{ label: 'Colour', defaultIndex: 0, choices: [{ label: 'Natural', extra: '', per: 'order' }, { label: 'Black', extra: '300', per: 'piece' }] }]) })).loc), 'Options with a per-piece extra save');
+  ok(/ok=/.test((await admin.form(optPage, 'Save options', { json: JSON.stringify([{ label: 'Colour', kind: 'pick', defaultIndex: 0, choices: [{ label: 'Natural', amount: '', per: 'order' }, { label: 'Black', amount: '300', per: 'piece' }] }]) })).loc), 'Options with a per-piece extra save');
+  ok((await guest.html(gridPage)).status >= 300, 'A visitor cannot open the price grid');
+  const pre = await admin.html(`/products/e2e-tote-bags?preview=1`);
+  ok(pre.status === 200 && pre.text.includes('Staff preview'), 'Staff can preview a product before it is on sale');
+  ok((await guest.html(`/products/e2e-tote-bags?preview=1`)).status === 404, 'A visitor cannot preview a hidden product');
+  const hiddenQuote = await guest.json('/api/quote', { slug: 'e2e-tote-bags', quantity: 10, area: 'Yaba', preview: true });
+  ok(hiddenQuote.body && hiddenQuote.body.ok === false, 'A visitor cannot get a quote for a hidden product, even asking for a preview');
   ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Put on sale', {})).loc), 'The product goes on sale');
   ok((await guest.html('/products')).text.includes('E2E tote bags'), 'It appears in the shop');
   const toteHtml = await guest.html('/products/e2e-tote-bags');
@@ -309,6 +344,28 @@ class Session {
   ok(tq.body.ok && tq.body.priceKobo === 2_800_000 && tq.body.extrasKobo === 300_000, 'Quote = price + ₦300 × 10 pieces for black (₦28,000)');
   ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Hide from the shop', {})).loc), 'The product can be hidden again');
   ok((await guest.html('/products/e2e-tote-bags')).status === 404, 'Hidden again → 404');
+
+  section('Console: price sheet, price test and history');
+  const sheetDl = await admin.req('/api/console/products/sheet');
+  const sheetCsv = await sheetDl.text();
+  ok(sheetDl.status === 200 && /text\/csv/.test(sheetDl.headers.get('content-type') ?? '') && /attachment/.test(sheetDl.headers.get('content-disposition') ?? ''), 'The price sheet downloads as a CSV file');
+  ok(sheetCsv.includes('Product key (do not change)') && sheetCsv.includes('business-cards'), 'The sheet has every product and the key columns');
+  ok((await guest.req('/api/console/products/sheet')).status === 403, 'A visitor cannot download the price sheet');
+  ok((await sup.req('/api/console/products/sheet')).status === 403, 'Support cannot download the price sheet');
+  const upSheet = async (text: string, mode: string, name = 'sheet.csv') => {
+    const fd = new FormData(); fd.append('file', new Blob([text], { type: 'text/csv' }), name); fd.append('mode', mode);
+    const r = await admin.req('/api/console/products/sheet', { method: 'POST', body: fd });
+    return { status: r.status, body: await r.json() as any };
+  };
+  const same = await upSheet(sheetCsv, 'check');
+  ok(same.status === 200 && same.body.ok && same.body.products.length === 0, 'Handing the sheet back untouched would change nothing');
+  const junk = await upSheet('hello,world\n1,2\n', 'check');
+  ok(junk.status === 422 && /does not look like a Brandit price sheet/.test(junk.body.problems[0]), 'A file that is not a price sheet is refused');
+  const pt = await admin.html('/console/products/test');
+  ok(pt.status === 200 && pt.text.includes('prices tried') && pt.text.includes('Business cards'), 'The price test runs for every product');
+  ok((await admin.html('/console/products/history')).status === 200, 'The change history page opens');
+  const bcId = /\/console\/products\/([0-9a-f-]{36})\/prices/.exec((await admin.html('/console/products')).text)?.[1] ?? '';
+  ok(!!bcId && (await admin.html(`/console/products/${bcId}/test`)).status === 200, 'One product\'s price test opens');
   ok(/ok=/.test((await admin.form(`/console/products/${pid}`, 'Delete this product', { confirm: 'delete' })).loc), 'An unused product can be deleted');
 
   section('Coupons');
@@ -325,7 +382,8 @@ class Session {
   const right = await cg.json(`/api/orders/${cid}/coupon`, { code: ' e2e10 ', phone: '0803 123 4567', area: 'Yaba' });
   ok(right.status === 200 && right.body.coupon?.code === 'E2E10' && right.body.discountKobo === 150_000, 'A correct code (any case, with spaces) is worth ₦1,500 off ₦15,000');
   ok(words((await cg.html(`/checkout/${cid}`)).text).includes('E2E10 applied'), 'Checkout shows the coupon already applied');
-  const cco = await cg.json(`/api/orders/${cid}/checkout`, { name: 'Ada Obi', phone: '0803 123 4567', email: 'ada@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
+  const cgIn = await signedIn('Chioma Okafor');
+  const cco = await cgIn.json(`/api/orders/${cid}/checkout`, { name: 'Ada Obi', phone: '0803 123 4567', email: 'ada@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
   ok(cco.status === 200, 'Checkout accepts the coupon order');
   const cpay = await cg.html(cco.body.url);
   ok(cpay.text.includes('₦20,000'), 'The pay page asks for exactly ₦20,000 (15,000 + 5,000 design + 1,500 delivery − 1,500 coupon)');
@@ -336,7 +394,10 @@ class Session {
   ok(inv.includes('E2E10') && inv.includes('1,500'), 'The invoice shows the coupon and the discount');
   ok(words((await admin.html('/console/coupons')).text).includes('Used 1 '), 'The coupon page counts the use');
   const cd2 = await new Session().json('/api/orders', { slug: 'business-cards', quantity: 100, area: 'Yaba' });
-  const again = await new Session().json(`/api/orders/${cd2.body.id}/coupon`, { code: 'E2E10', phone: '0803 123 4567' });
+  // Paying needs a sign-in now, so "the same customer" is the same signed-in account, on any device.
+  const cgAgain = await signedIn('Chioma Okafor');
+  const cd3 = await cgAgain.json('/api/orders', { slug: 'business-cards', quantity: 100, area: 'Yaba' });
+  const again = await cgAgain.json(`/api/orders/${cd3.body.id}/coupon`, { code: 'E2E10', phone: '0803 123 4567' });
   ok(again.status === 422 && /already used/.test(again.body.error), 'The same customer cannot use it twice');
   ok(/ok=/.test((await admin.form('/console/coupons', 'Pause', { })).loc), 'A coupon can be paused');
   const paused = await new Session().json(`/api/orders/${cd2.body.id}/coupon`, { code: 'E2E10', phone: '0809 999 8888' });
@@ -381,7 +442,8 @@ class Session {
   ok(chk.status === 200 && chk.text.includes('Agreed price') && chk.text.includes('₦85,000') && !chk.text.includes('Have a coupon code?'), 'Checkout shows the agreed price and offers no coupon box');
   const ccoupon = await cust.json(`/api/orders/${coId}/coupon`, { code: 'BRAND-TEST' });
   ok(ccoupon.status === 422, 'A coupon cannot be put on a custom quote');
-  const cc = await cust.json(`/api/orders/${coId}/checkout`, { name: 'Tolu Ade', phone: '0802 555 1234', email: 'tolu@example.com', pickup: false, area: 'Yaba', addressLine: '5 Test Road, Yaba' });
+  const custIn = await signedIn('Ibrahim Bello');
+  const cc = await custIn.json(`/api/orders/${coId}/checkout`, { name: 'Tolu Ade', phone: '0802 555 1234', email: 'tolu@example.com', pickup: false, area: 'Yaba', addressLine: '5 Test Road, Yaba' });
   ok(cc.status === 200, 'Custom checkout works');
   const cp = await cust.html(cc.body.url);
   ok(cp.text.includes('₦86,500'), 'The pay page asks for ₦85,000 + ₦1,500 delivery');
@@ -433,7 +495,8 @@ class Session {
   ok(tplGo.status === 200 && tplGoBody.ok && tplGoBody.orderId, 'A filled-in template becomes an order');
   const tplCheckout = await guest.html(`/checkout/${tplGoBody.orderId}`);
   ok(tplCheckout.status === 200, 'The order opens at checkout');
-  const tplTrk = await guest.json(`/api/orders/${tplGoBody.orderId}/checkout`, { name: 'Pastor Ade', phone: '0803 222 3344', email: 'ade@example.com', pickup: true, window: 'afternoon' });
+  const tplIn = await signedIn('Ibrahim Bello');
+  const tplTrk = await tplIn.json(`/api/orders/${tplGoBody.orderId}/checkout`, { name: 'Pastor Ade', phone: '0803 222 3344', email: 'ade@example.com', pickup: true, window: 'afternoon' });
   ok(tplTrk.status === 200, 'Checkout works for a template order');
   const tplPaid = await guest.form(tplTrk.body.url, 'Simulate a successful payment');
   const tplTok = /\/track\/([\w-]+)/.exec(tplPaid.loc)?.[1] ?? '';
@@ -685,6 +748,272 @@ class Session {
   ok((await admin.html('/console/studio/review')).status === 200 && (await files.html('/console/studio/review')).status === 200, 'Admin and the file desk open the review queue');
   ok((await files.html('/console/studio/settings')).status >= 300 && (await sup.html('/console/studio')).status >= 300, 'The file desk cannot change settings and support cannot open Studio');
   ok((await admin.html('/console/setup')).text.includes('Brandit Studio'), 'The Setup page includes a Studio section');
+  // Phase 0: the one-press connection tests on the Setup page. Demo mode has no email, bucket, Paystack or Sentry keys, so each must say so in plain words.
+  const setupHtml = (await admin.html('/console/setup')).text;
+  ok(['Test the connections', 'Send a test email', 'Test file storage', 'Test Paystack', 'Send a test alert'].every((t) => setupHtml.includes(t)), 'The Setup page has the four connection tests');
+  ok(/e=Email is not set up/.test((await admin.form('/console/setup', 'name="to"', { to: 'owner@example.com' })).loc), 'Test email says email is not set up when there is no Resend key');
+  ok(/e=No bucket is set up/.test((await admin.form('/console/setup', 'Test file storage')).loc), 'Test storage says no bucket is set up');
+  ok(/e=There is no Paystack key/.test((await admin.form('/console/setup', 'Test Paystack')).loc), 'Test Paystack says there is no key');
+  ok(/e=There is no SENTRY_DSN/.test((await admin.form('/console/setup', 'Send a test alert')).loc), 'Test alert says there is no SENTRY_DSN');
+  ok(/e=That does not look like an email/.test((await admin.form('/console/setup', 'name="to"', { to: 'not-an-email' })).loc), 'Test email refuses something that is not an address');
+  ok((await files.html('/console/setup')).status >= 300, 'The file desk cannot open Setup or press its tests');
+  ok(/Watching the site/.test(setupHtml) && /api\/health/.test(setupHtml), 'Setup reminds you to watch the site and point an uptime monitor at /api/health');
+  // Phase 0, finished: our own backups and restore test, alerts to the phone, and the deep health check.
+  ok(['Back up now', 'Test a restore', 'Backups'].every((t) => setupHtml.includes(t)), 'The Setup page has a Backups section with Back up now and Test a restore');
+  const backed = await admin.form('/console/setup', 'Back up now');
+  ok(/ok=Backed up [\d,]+ rows from \d+ tables .*read back and matches/.test(backed.loc), 'Back up now stores a backup and reads it back');
+  const restored = await admin.form('/console/setup', 'Test a restore');
+  ok(/ok=Restore test passed\. backups\/daily\/\d{4}-\d{2}-\d{2}\.json\.gz came back whole/.test(restored.loc), 'Test a restore rebuilds the backup in a scratch database and checks it');
+  const deep = await guest.req('/api/health/deep');
+  const deepBody: any = await deep.json().catch(() => null);
+  ok(Array.isArray(deepBody?.checks) && deepBody.checks.map((c: any) => c.id).join() === 'database,storage,paystack,email,backup,sweep', 'The deep health check lists its six checks (open in demo mode with no secret)');
+  ok(deepBody?.checks?.find((c: any) => c.id === 'database')?.ok === true, 'The deep health check finds the database working and fully upgraded');
+  ok(deepBody?.checks?.find((c: any) => c.id === 'backup')?.skipped === true, 'The deep health check skips backups in demo mode');
+  ok(!JSON.stringify(deepBody).match(/postgres:\/\/|sk_(live|test)_/), 'The deep health check shows no address or key');
+  const cron = await guest.req('/api/cron/backup');
+  ok(cron.status === 200 && JSON.stringify(await cron.json()) === '{"ran":[]}', 'The backup schedule address does nothing in demo mode');
+  }
+
+  let sCode = '';
+  section('One order flow: the builder, the basket, short links, one payment');
+  {
+  const shop = new Session();
+  const sl = await shop.html('/order/business-cards?package=standard&q=250');
+  ok(sl.status === 307 && /\/products\/business-cards\?/.test(sl.loc ?? '') && /package=standard/.test(sl.loc ?? '') && /q=250/.test(sl.loc ?? '') && /from=link/.test(sl.loc ?? ''), `A short link opens the builder with its choices (${sl.loc})`);
+  ok((await shop.html('/order/not-a-real-product')).status === 404, 'A short link to nothing is a 404');
+  const slOrder = await shop.html(`/order/${id}`);
+  ok(slOrder.status === 307 && /\/track\//.test(slOrder.loc ?? ''), 'The same address still takes an order id to its tracker');
+  const list = (await (await shop.req('/api/builder')).json()) as any;
+  ok(Array.isArray(list.products) && list.products.length >= 6 && list.products.every((x: any) => x.slug && x.name && x.from), 'The product picker has every product with its starting price');
+  const bdata = await shop.req('/api/builder/business-cards');
+  const bdText = await bdata.text();
+  ok(bdata.status === 200 && JSON.parse(bdText).product.slug === 'business-cards' && !/cost_kobo|costKobo/.test(bdText), 'The builder data has the product and no costs');
+  ok((await shop.req('/api/builder/not-a-product')).status === 404, 'An unknown product is a 404 in the panel too');
+  const homeText = words((await shop.html('/')).text);
+  ok(homeText.includes('What do you need?') && homeText.includes('Order now') && /Search products/.test(homeText), 'The home page has the quick order: a search and product tiles');
+  const homeHtml = (await shop.html('/')).text;
+  ok(/href="\/basket"/.test(homeHtml) && /aria-label="Main"/.test(homeHtml) && homeText.includes('Basket'), 'The header and the phone bar link to the basket');
+  ok((await shop.html('/basket')).status === 200 && words((await shop.html('/basket')).text).includes('Nothing here yet'), 'An empty basket says so and offers a way in');
+
+  const a1 = await shop.json('/api/basket/lines', { slug: 'business-cards', quantity: 100, area: 'Yaba', startedFrom: 'home' });
+  ok(a1.status === 200 && !!a1.body.orderId && !!a1.body.itemId && !!shop.cookies.bb, 'The first product starts a basket and this phone remembers it');
+  const a2 = await shop.json('/api/basket/lines', { slug: 'flyers', quantity: 100, area: 'Yaba' });
+  ok(a2.status === 200 && a2.body.orderId === a1.body.orderId && a2.body.itemId !== a1.body.itemId, 'A second product goes into the same basket');
+  const oid = a1.body.orderId as string;
+  const [it1, it2] = [a1.body.itemId as string, a2.body.itemId as string];
+  const bk = (await (await shop.req('/api/basket')).json()) as any;
+  ok(bk.count === 2 && bk.view.lines.length === 2, 'The basket badge counts two products');
+  ok(!/cost_kobo|costKobo/.test(JSON.stringify(bk)), 'The basket shows no costs');
+  const bkText = words((await shop.html('/basket')).text);
+  ok(bkText.includes('Business cards') && bkText.includes('Flyers') && /still need their artwork/.test(bkText), 'The basket page lists both, and says they need artwork');
+  const early = await shop.html(`/checkout/${oid}`);
+  ok(early.status >= 300 && early.status < 400 && /\/basket$/.test(early.loc ?? ''), 'Checkout sends a basket with unfinished products back to the basket');
+  const earlyPay = await shop.json(`/api/orders/${oid}/checkout`, { name: 'Tunde Adeyemi', phone: '0803 123 4567', email: 'tunde.adeyemi@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
+  ok(earlyPay.status === 409 && earlyPay.body.redirect === '/basket', 'Paying is refused until every product has its artwork');
+
+  const upItem = async (oid_: string, item: string, png: Buffer, name: string) => { const fd = new FormData(); fd.append('file', new File([new Uint8Array(png)], name, { type: 'image/png' })); const r = await shop.req(`/api/orders/${oid_}/upload?item=${item}`, { method: 'POST', body: fd }); return r.json() as Promise<any>; };
+  const u1 = await upItem(oid, it1, makePng(1050, 600), 'card.png');
+  ok(u1.ok && u1.attached && u1.check.status === 'pass', 'A file for the first product is checked on that product');
+  ok((await shop.json(`/api/orders/${oid}/approve`, { itemId: it1 })).body.ok === true, '"Looks right" approves the first product');
+  const brief = await shop.json(`/api/orders/${oid}/artwork-path`, { purpose: 'Opening day flyer', wording: 'Open Saturday 9am', itemId: it2 });
+  ok(brief.status === 200, 'The second product asks for a designer');
+  const view2 = ((await (await shop.req('/api/basket')).json()) as any).view;
+  ok(view2.allReady === true && view2.lines.map((l: any) => l.proof).join() === 'approved_preview,designer', `Both are ready, with their own state (${view2.lines.map((l: any) => l.proof).join()})`);
+  const patch = await shop.req(`/api/basket/lines/${it2}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: 250 }) });
+  const patchBody = (await patch.json()) as any;
+  ok(patch.status === 200 && patchBody.view.lines[1].quantity === 250 && patchBody.view.subtotalKobo > view2.subtotalKobo, 'Changing one product reprices the basket');
+  ok((await shop.html(`/checkout/${oid}`)).status === 200, 'With every product ready, checkout opens');
+  const coMulti = words((await shop.html(`/checkout/${oid}`)).text);
+  ok(coMulti.includes('Business cards') && coMulti.includes('Flyers') && coMulti.includes('Sign in to pay'), 'Checkout lists both products and asks for a sign-in');
+  const guestPay = await shop.json(`/api/orders/${oid}/checkout`, { name: 'Tunde Adeyemi', phone: '0803 123 4567', email: 'tunde.adeyemi@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
+  ok(guestPay.status === 401 && guestPay.body.field === 'signin', 'A visitor who has not signed in cannot pay');
+
+  await shop.form('/signin/demo-google', 'Tunde Adeyemi', {});
+  const after = (await (await shop.req('/api/basket')).json()) as any;
+  ok(after.view?.orderId === oid && after.count === 2, 'Signing in keeps the basket, and it now belongs to the customer');
+  const multiPay = await shop.json(`/api/orders/${oid}/checkout`, { name: 'Tunde Adeyemi', phone: '0803 123 4567', email: 'tunde.adeyemi@example.com', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba' });
+  ok(multiPay.status === 200 && /^\/pay\//.test(multiPay.body.url), 'Signed in, one payment covers both products');
+  const multiPayPage = words((await shop.html(multiPay.body.url)).text);
+  ok(/Demo payment/.test(multiPayPage), 'There is one payment page for the whole basket');
+  const multiPaid = await shop.form(multiPay.body.url, 'Simulate a successful payment');
+  const multiTok = /\/track\/([\w-]+)/.exec(multiPaid.loc)?.[1] ?? '';
+  ok(!!multiTok, 'Paying lands on one tracker');
+  const mt = (await (await shop.req(`/api/track/${multiTok}`)).json()) as any;
+  ok(Array.isArray(mt.lines) && mt.lines.length === 2 && mt.lines.map((l: any) => l.name).join() === 'Business cards,Flyers', 'The tracker shows each product');
+  ok(!/cost_kobo|costKobo/.test(JSON.stringify(mt)), 'The tracker shows no costs');
+  const trackPage = words((await shop.html(`/track/${multiTok}`)).text);
+  ok(trackPage.includes('Business cards') && trackPage.includes('Flyers'), 'The tracking page names both products');
+  const q2 = words((await files.html('/console/queue')).text);
+  ok(q2.includes('Business cards') && q2.includes('Flyers'), 'The production queue has a row for each product');
+  const afterPay = (await (await shop.req('/api/basket')).json()) as any;
+  ok(afterPay.count === 0, 'After paying the basket is empty');
+  ok((await shop.html('/account')).status === 200 && words((await shop.html('/account')).text).includes('Business cards'), 'The order is in the customer\'s account as one order');
+
+  // ---------------------------------------------------------------- the sample pack, a pay link and a company account
+  section('Sample pack, pay link and company account');
+  const samplePage = await shop.html('/products/sample-pack');
+  ok(samplePage.status === 200 && words(samplePage.text).includes('Try our work before you order'), 'The sample pack has its own page');
+  const pickList = (await (await shop.req('/api/builder')).json()) as any;
+  ok(!pickList.products.some((x: any) => x.slug === 'sample-pack'), 'The sample pack is not offered as a product to design');
+  const sAdd = await shop.json('/api/basket/lines', { slug: 'sample-pack', quantity: 1, config: {}, startedFrom: 'product' });
+  ok(sAdd.status === 200 && !!sAdd.body.orderId, 'The sample pack goes into the basket in one tap');
+  const sOid = sAdd.body.orderId as string;
+  ok(((await (await shop.req('/api/basket')).json()) as any).view.allReady === true, 'It needs no artwork, so the basket is ready to pay');
+  const shared = await shop.json(`/api/orders/${sOid}/checkout`, { name: 'Tunde Adeyemi', phone: '0803 123 4567', email: 'tunde.adeyemi@example.com', company: 'Adeyemi Print Co', pickup: false, area: 'Yaba', addressLine: '12 Test Street, Yaba', share: true, note: 'Please pay for the samples' });
+  ok(shared.status === 200 && /\/pay-link\/[\w-]+$/.test(shared.body.link ?? ''), 'The customer asks someone else to pay and gets a link');
+  const payTok = /pay-link\/([\w-]+)/.exec(shared.body.link ?? '')?.[1] ?? '';
+  const payer = new Session();
+  const plText = words((await payer.html(`/pay-link/${payTok}`)).text);
+  ok(plText.includes('Sample pack') && plText.includes('Please pay for the samples') && !plText.includes('12 Test Street') && !plText.includes('0803'), 'Whoever opens the link sees the order and the note, never the address or the phone number');
+  ok((await payer.json(`/api/pay-link/${payTok}`, { name: 'x', email: 'bad' })).status === 422, 'The payer must give a name and a real email');
+  const plPay = await payer.json(`/api/pay-link/${payTok}`, { name: 'Pastor Bayo', email: 'bayo@example.com' });
+  ok(plPay.status === 200 && /^\/pay\//.test(plPay.body.url), 'The payer starts paying');
+  await payer.form(plPay.body.url, 'Simulate a successful payment');
+  ok(words((await payer.html(`/pay-link/${payTok}`)).text).includes('This order is paid'), 'After payment the link says the order is paid');
+  ok((await payer.json(`/api/pay-link/${payTok}`, { name: 'Pastor Bayo', email: 'bayo@example.com' })).status === 409, 'A paid link cannot be paid twice');
+  ok((await payer.json('/api/pay-link/not-a-real-token-xx', { name: 'Pastor Bayo', email: 'bayo@example.com' })).status === 404, 'A made-up link is a 404');
+  sCode = shared.body.code as string;
+  ok(words((await admin.html(`/console/orders/${sCode}`)).text).includes('Paid by Pastor Bayo'), 'The console shows who paid');
+  ok((await files.html('/console/queue')).text.includes(sCode), 'The sample pack reaches the file desk like any order');
+
+  const biz = await shop.html('/account/business');
+  ok(biz.status === 200 && words(biz.text).includes('Adeyemi Print Co') && words(biz.text).includes('You own this company account'), 'A company name at checkout makes the customer the owner of a company account');
+  const joinTok = /\/join\/([\w-]+)/.exec(biz.text)?.[1] ?? '';
+  ok(!!joinTok, 'The owner gets a link to invite the team');
+  const member = await signedIn('Chioma Okafor');
+  ok(words((await member.html(`/join/${joinTok}`)).text).includes('Join Adeyemi Print Co on Brandit'), 'The join link shows the company name');
+  const joined = await member.form(`/join/${joinTok}`, 'name="token"');
+  ok(/joined=1/.test(joined.loc), `A member joins with one tap (${joined.loc})`);
+  const memberPage = words((await member.html('/account/business')).text);
+  ok(memberPage.includes('Tunde owns this company account') && !memberPage.includes('Monthly statement'), 'A member sees the company but not the statement');
+  ok((await member.req('/api/account/business/statement')).status === 404, 'A member cannot download the statement');
+  ok((await guest.req('/api/account/business/statement')).status === 401, 'A visitor cannot either');
+  const stmt = await shop.req(`/api/account/business/statement?month=${new Date().toISOString().slice(0, 7)}`);
+  const stmtText = await stmt.text();
+  ok(stmt.status === 200 && /text\/csv/.test(stmt.headers.get('content-type') ?? '') && stmtText.includes(sCode), 'The owner downloads a monthly statement that lists the company\'s orders');
+  ok((await guest.html('/join/not-a-real-token-xx')).text.includes('This join link does not work'), 'A made-up join link says so');
+
+  // ---------------------------------------------------------------- reorder and reminders
+  section('Reorder and reminders');
+  ok(words((await shop.html(`/reorder/${multiTok}`)).text).includes('Order the same again?'), 'A reminder opens the order it came from');
+  ok(/\/signin/.test((await guest.html(`/reorder/${multiTok}`)).loc ?? ''), 'A visitor is sent to sign in first');
+  ok(words((await member.html(`/reorder/${multiTok}`)).text).includes('We could not open that order'), 'Someone else\'s reminder shows nothing about the order');
+  const again = await shop.form(`/reorder/${multiTok}`, 'Order the same again');
+  ok(/\/checkout\/|\/basket/.test(again.loc) && !/e=/.test(again.loc), `"Order the same again" puts the repeat order in the basket (${again.loc})`);
+  const prefs = await shop.form('/account', 'name="reminders_ok"', { nudge_ok: 'on', reminders_ok: 'on', lang: 'en' });
+  ok(/saved=1/.test(prefs.loc), 'Reminders can be switched on under Messages and language');
+  const wk = await shop.form('/account', 'name="weekday"', { weekday: '4' });
+  ok(/reminder=1/.test(wk.loc), 'A weekly reminder can be set from the account page');
+  ok(words((await shop.html('/account')).text).includes('Weekly reminder: every Thursday'), 'The account page says which morning');
+  const wkStop = await shop.form('/account', '>Stop</button>');
+  ok(/reminder=0/.test(wkStop.loc), 'It can be stopped from the account page');
+  ok(words((await guest.html('/reminders/stop/not-a-real-token-xx')).text).includes('We could not find that reminder'), 'A made-up stop link says so, kindly');
+  }
+
+  section('Navigation, groups and search');
+  {
+    const nav = /<nav aria-label="Main"[\s\S]*?<\/nav>/.exec((await guest.html('/')).text)?.[0] ?? '';
+    const hrefs = [...nav.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+    ok(hrefs.join() === '/products,/templates,/track,/help', `The header has four things (${hrefs.join(' ')})`);
+    const foot = words(/<footer[\s\S]*<\/footer>/.exec((await guest.html('/')).text)?.[0] ?? '');
+    ok(['Plan an event', 'Custom order', 'For businesses', 'Track an order'].every((x) => foot.includes(x)), 'Event planning, custom orders and business pages are one tap away in the footer');
+    const pr = await guest.html('/products');
+    const pw = words(pr.text);
+    const groups = ['Cards and stationery', 'Marketing prints', 'Banners and signs', 'Tees and Totes', 'Frames and gifts', 'IDs and events'];
+    const at = groups.map((g) => pr.text.indexOf(`>${g}</h2>`));
+    ok(at.every((i) => i > 0) && at.every((x, i) => i === 0 || x > at[i - 1]), 'Products sit under six group names, in the usual order');
+    ok(pw.includes('Try a sample pack') && pw.includes('Other ways to order'), 'The sample pack is a banner, and the other ways to order are listed');
+    ok(!pr.text.includes('>Samples<'), 'The sample pack is not a group');
+    const flat = words((await guest.html('/products?c=Banners%20and%20signs')).text);
+    ok(flat.includes('Flex banners') && flat.includes('Roll-up banners') && !flat.includes('Business cards'), 'Choosing a group shows only its products');
+    ok(words((await guest.html('/products?q=church+banner')).text).includes('Flex banners'), 'Search understands "church banner"');
+    ok(words((await guest.html('/products?q=name+tag')).text).includes('ID cards'), 'Search understands "name tag"');
+    ok(words((await guest.html('/products?q=programme')).text).includes('Flyers'), 'Search understands "programme"');
+    const none = words((await guest.html('/products?q=zzzzqq')).text);
+    ok(none.includes('Nothing matches') && none.includes('Ask for a custom price'), 'A search with no answer offers a custom price');
+    ok(words((await guest.html('/products?q=church')).text).includes('Ready-made templates'), 'Search also finds ready-made templates');
+    ok((await guest.html('/console/forgot')).status === 200, 'The forgot-PIN page opens');
+  }
+
+  section('Console: every screen opens, and each role sees only its own');
+  {
+    const dispatch = new Session();
+    await login(dispatch, 'dispatch@brandit.test');
+    const clean = (t: string) => !/\bNaN\b|undefined|\[object Object\]/.test(t.replace(/<script[\s\S]*?<\/script>/g, ''));
+    const everything = ['/console/today', '/console/queue', '/console/orders', '/console/orders/new', '/console/custom', '/console/promise', '/console/payments', '/console/products', '/console/stock', '/console/templates', '/console/studio', '/console/customers', '/console/homepage', '/console/campaigns', '/console/coupons', '/console/growth', '/console/reviews', '/console/reports', '/console/business', '/console/rules', '/console/messages', '/console/pages', '/console/pages/faq', '/console/pages/terms', '/console/team', '/console/setup', '/console/activity', '/console/me'];
+    const broken: string[] = [];
+    for (const p of everything) { const r = await admin.html(p); if (r.status !== 200 || !clean(r.text)) broken.push(`${p} → ${r.status}`); }
+    ok(broken.length === 0, `The admin opens all ${everything.length} console screens without an error${broken.length ? ': ' + broken.join(', ') : ''}`);
+    const shut = async (s: Session, paths: string[]) => { const out: string[] = []; for (const p of paths) { const r = await s.req(p); await r.text(); if (r.status < 300) out.push(p); } return out; };
+    const open = async (s: Session, paths: string[]) => { const out: string[] = []; for (const p of paths) { const r = await s.req(p); await r.text(); if (r.status !== 200) out.push(`${p} → ${r.status}`); } return out; };
+    const check = async (label: string, s: Session, yes: string[], no: string[]) => {
+      const [a, b] = [await open(s, yes), await shut(s, no)];
+      ok(a.length === 0 && b.length === 0, `${label}${a.length ? ` — should open: ${a.join(', ')}` : ''}${b.length ? ` — should be shut: ${b.join(', ')}` : ''}`);
+    };
+    await check('Support opens customers, payments, orders and reports, and nothing that changes the shop', sup,
+      ['/console/today', '/console/orders', '/console/orders/new', '/console/custom', '/console/payments', '/console/customers', '/console/reviews', '/console/reports', '/console/me'],
+      ['/console/business', '/console/team', '/console/setup', '/console/pages', '/console/homepage', '/console/products', '/console/stock', '/console/rules', '/console/activity', '/console/coupons', '/console/growth', '/console/messages']);
+    await check('The dispatcher opens orders and the queue, and not money or customers', dispatch,
+      ['/console/queue', '/console/orders', '/console/me'],
+      ['/console/payments', '/console/customers', '/console/business', '/console/team', '/console/pages', '/console/orders/new', '/console/activity']);
+    await check('The production lead runs the shop but not the team, the business details or the activity log', lead,
+      ['/console/products', '/console/stock', '/console/payments', '/console/customers', '/console/pages', '/console/homepage', '/console/orders/new', '/console/rules'],
+      ['/console/team', '/console/business', '/console/setup', '/console/activity']);
+    await check('The file desk sees neither money nor customers', files, ['/console/queue', '/console/me'], ['/console/payments', '/console/customers', '/console/orders/new', '/console/business']);
+
+    // Business details
+    const badBiz = await admin.form('/console/business', 'Save business details', { whatsapp: '123', phone: '', email: '', address: '', hours: '', reply_within: '' });
+    ok(/e=/.test(badBiz.loc), 'A WhatsApp number that cannot be right is refused with a reason');
+    const goodBiz = await admin.form('/console/business', 'Save business details', { whatsapp: '0803 555 0100', phone: '', email: 'hello@thebrandit.ng', address: '12 Allen Avenue, Ikeja', hours: 'Mon to Fri, 9am to 5pm', reply_within: 'an hour' });
+    ok(/ok=/.test(goodBiz.loc), 'The admin changes the WhatsApp number, address and hours without a developer');
+    const contact = words((await guest.html('/contact')).text);
+    ok(contact.includes('12 Allen Avenue, Ikeja') && contact.includes('Mon to Fri, 9am to 5pm'), 'The contact page shows the new address and hours straight away');
+    ok((await guest.html('/')).text.includes('wa.me/2348035550100'), 'The WhatsApp button uses the new number');
+
+    // Homepage words
+    const badHome = await admin.form('/console/homepage', 'Save the homepage', { headline: '', subline: '', announce_on: 'on', announce_text: 'Sale', announce_link: 'javascript:alert(1)', founding_limit: '100', founding_perk: '' });
+    ok(/e=/.test(badHome.loc), 'The announcement bar refuses a link that is not one of our pages');
+    const goodHome = await admin.form('/console/homepage', 'Save the homepage', { headline: 'Print that just works', subline: 'Order in minutes, collect in a day.', announce_on: 'on', announce_text: 'Free delivery in Lagos this week', announce_link: '/products', founding_limit: '100', founding_perk: '' });
+    ok(/ok=/.test(goodHome.loc), 'The admin changes the homepage headline and announcement');
+    const newHome = (await guest.html('/')).text;
+    ok(newHome.includes('Print that just works') && newHome.includes('Free delivery in Lagos this week'), 'The homepage shows them straight away');
+    await admin.form('/console/homepage', 'Save the homepage', { headline: '', subline: '', founding_limit: '100', founding_perk: '' });
+    ok(words((await guest.html('/')).text).includes('Printing without the hassle.') && !(await guest.html('/')).text.includes('Free delivery in Lagos this week'), 'Clearing the words brings back the built-in homepage');
+
+    // Policy page and a question
+    const policyBody = 'These are our own terms of sale, written by the team after a lawyer read them. They are long enough to publish and clear enough to follow.';
+    const pub = await admin.form('/console/pages/terms', 'Publish this version', { title: 'Terms and Conditions', body: policyBody, note: 'e2e check' });
+    ok(/ok=/.test(pub.loc), 'The admin publishes their own terms');
+    ok(words((await guest.html('/legal/terms')).text).includes('lawyer read them'), 'The public terms page shows the team\'s version');
+    const back = await admin.form('/console/pages/terms', 'Go back to the built-in version', {});
+    ok(/ok=/.test(back.loc) && words((await guest.html('/legal/terms')).text).includes('Prices, VAT and fees'), 'Going back restores the built-in terms');
+    const faqPage = (await admin.html('/console/pages/faq')).text;
+    const groupId = /name="group"[^>]*>\s*<option value="([^"]+)"/.exec(faqPage)?.[1] ?? '';
+    const addQ = await admin.form('/console/pages/faq', 'Add it', { group: groupId, question: 'Do you print on mugs?', answer: 'Not yet. Ask us on WhatsApp and we will tell you.' });
+    ok(!!groupId && /ok=/.test(addQ.loc) && words((await guest.html('/faq')).text).includes('Do you print on mugs?'), 'A question the team adds shows on the public FAQ');
+
+    // Customers
+    const csv = await admin.req('/console/customers/export');
+    const csvText = await csv.text();
+    ok(csv.status === 200 && /text\/csv/.test(csv.headers.get('content-type') ?? '') && csvText.includes('Tunde Adeyemi') && /,\+2348\d{9},/.test(csvText), 'The admin downloads the customer list, with phone numbers left as they are');
+    ok((await sup.req('/console/customers/export')).status === 403 && (await guest.req('/console/customers/export')).status === 403, 'Support and visitors cannot download the customer list');
+    const custList = (await admin.html('/console/customers?q=Tunde')).text;
+    const cid = /\/console\/customers\/([0-9a-f-]{36})/.exec(custList)?.[1] ?? '';
+    ok(!!cid, 'Searching finds the customer');
+    const note = await admin.form(`/console/customers/${cid}`, 'Save note', { body: 'Prefers WhatsApp after 5pm' });
+    ok(/ok=/.test(note.loc) && words((await sup.html(`/console/customers/${cid}`)).text).includes('Prefers WhatsApp after 5pm'), 'A note on a customer is saved, and support can read it');
+    ok(words((await admin.html(`/console/customers/${cid}`)).text).includes('Adeyemi Print Co'), 'The customer page shows their company');
+
+    // Payments and the activity log
+    const payPage = words((await admin.html('/console/payments?f=paid')).text);
+    ok(payPage.includes(sCode) && payPage.includes('Pastor Bayo'), 'The payments page shows the sample pack payment and who paid');
+    const act = words((await admin.html('/console/activity')).text);
+    ok(act.includes('Published their own version of Terms and Conditions') && act.includes('Added a note') && act.includes('Downloaded the customer list'), 'The activity log records the changes made above');
+    ok(words((await admin.html('/console/activity?area=customer')).text).includes('Added a note'), 'The activity log can be filtered');
+
+    // Messages
+    const msgs = words((await admin.html('/console/messages')).text);
+    ok(['Order updates', 'Quotes and reminders', 'sample_credit', 'pay_link'].every((x) => msgs.includes(x) || msgs.toLowerCase().includes(x.replace('_', ' '))), 'The messages screen lists every message, including the new reminders and pay link');
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

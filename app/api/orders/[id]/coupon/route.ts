@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getItem, getOrder, identityOf } from '@/lib/orders';
+import { designFeeOf, getItems, getOrder, identityOf } from '@/lib/orders';
 import { validateCoupon, publicCoupon, type Identity } from '@/lib/coupons';
 import { zoneForArea } from '@/lib/catalog';
 import { getSettings } from '@/lib/settings';
@@ -23,13 +23,13 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
   const code = normalizeCode(b?.code);
   if (!code) return NextResponse.json({ ok: false, error: 'Type your code first.' }, { status: 422 });
   const o = await getOrder(id);
-  const item = o && (await getItem(id));
-  if (!open(o) || !item) return NextResponse.json({ ok: false, error: 'This order can no longer be changed.' }, { status: 409 });
+  const items = o ? await getItems(id) : [];
+  if (!open(o) || items.length === 0) return NextResponse.json({ ok: false, error: 'This order can no longer be changed.' }, { status: 409 });
 
   const s = await getSettings();
   const pickup = b?.pickup != null ? !!b.pickup : !!o!.pickup;
   const zone = pickup ? null : await zoneForArea(b?.area ? String(b.area) : o!.area);
-  const design = o!.custom_request_id ? 0 : item.artwork_path === 'design' ? (item.design_brief?.fix ? s.fix_fee_kobo : s.design_fee_kobo) : 0;
+  const design = o!.custom_request_id ? 0 : items.reduce((a, it) => a + designFeeOf(s, it), 0);
   let identity: Identity = await identityOf(o!);
   if (!identity.customerId) {
     // A signed-in customer is who they say they are. A phone or email typed into the form is only a hint.
@@ -41,7 +41,7 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
     const email = b?.email ? String(b.email).trim().toLowerCase() : null;
     identity = { phone, email: email && /^[^\s@]+@[^\s@]+$/.test(email) ? email : null };
   }
-  const v = await validateCoupon(code, { subtotalKobo: item.line_total_kobo, designKobo: design, deliveryKobo: zone?.fee_kobo ?? 0, productId: item.product_id, orderId: o!.id, identity, custom: !!o!.custom_request_id });
+  const v = await validateCoupon(code, { subtotalKobo: items.reduce((a, it) => a + it.line_total_kobo, 0), designKobo: design, deliveryKobo: zone?.fee_kobo ?? 0, productId: items[0].product_id, lines: items.map((it) => ({ productId: it.product_id, kobo: it.line_total_kobo })), orderId: o!.id, identity, custom: !!o!.custom_request_id });
   if (!v.ok) return NextResponse.json({ ok: false, error: v.message }, { status: 422 });
 
   await query('update orders set coupon_id = $2, coupon_code = $3 where id = $1', [o!.id, v.coupon.id, v.coupon.code]);

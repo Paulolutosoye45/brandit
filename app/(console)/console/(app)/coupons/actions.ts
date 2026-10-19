@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import { CouponError, createCoupon, deleteCoupon, setCouponActive, updateCouponLimits } from '@/lib/couponAdmin';
+import { trail, trailProduct } from '@/lib/trail';
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? '');
 function back(msg: { e?: string; ok?: string }, hash = ''): never {
@@ -11,6 +12,7 @@ function back(msg: { e?: string; ok?: string }, hash = ''): never {
 }
 async function run(ok: string, hash: string, fn: () => Promise<unknown>): Promise<never> {
   try { await fn(); } catch (e) { if (e instanceof CouponError) return back({ e: e.message }, hash); throw e; }
+  await trail({ area: 'marketing', action: 'coupon', summary: ok });
   return back({ ok }, hash);
 }
 
@@ -28,6 +30,7 @@ export async function createCouponAction(fd: FormData) {
     if (e instanceof CouponError) return back({ e: e.message }, '#new');
     throw e;
   }
+  await trail({ area: 'marketing', action: 'coupon_created', target: code, summary: `Created coupon ${code}` });
   back({ ok: `Coupon ${code} is live. Share the link next to it, or give customers the code.` }, '#list');
 }
 

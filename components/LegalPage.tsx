@@ -1,5 +1,5 @@
 import { Notice } from './Bits';
-import { legalReviewed } from '@/lib/site';
+import { getBusiness } from '@/lib/business';
 
 export type TocItem = { id: string; title: string };
 
@@ -13,7 +13,8 @@ export function LSection({ id, n, title, children }: { id: string; n: number; ti
   );
 }
 
-export function LegalPage({ title, updated, toc, intro, children }: { title: string; updated: string; toc?: TocItem[]; intro?: React.ReactNode; children: React.ReactNode }) {
+export async function LegalPage({ title, updated, toc, intro, children }: { title: string; updated: string; toc?: TocItem[]; intro?: React.ReactNode; children: React.ReactNode }) {
+  const reviewed = (await getBusiness()).legalReviewed;
   return (
     <article className="mx-auto grid max-w-[760px] gap-6 px-5 py-10">
       <div className="grid gap-2">
@@ -21,7 +22,7 @@ export function LegalPage({ title, updated, toc, intro, children }: { title: str
         <p className="text-muted">Last updated {updated}</p>
       </div>
       {intro && <div className="text-[19px] leading-snug">{intro}</div>}
-      {!legalReviewed() && (
+      {!reviewed && (
         <Notice tone="warn"><span className="font-bold">Draft for legal review.</span> This is plain-language starting text. Have a Nigerian lawyer review and adapt it before Brandit takes public orders.</Notice>
       )}
       {toc && toc.length > 0 && (

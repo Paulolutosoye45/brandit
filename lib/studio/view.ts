@@ -11,6 +11,8 @@ import { accessFor, naira, priceOf, studioPublicStatus, tierOn } from './config'
 import { sketchState } from './limits';
 import { capState } from './ledger';
 import { walletOf } from './purchases';
+import { lineOf } from './inOrder';
+import { studioFeeKobo } from './fees';
 import { appUrl } from '../messages';
 import type { Spec } from './specs';
 
@@ -114,6 +116,7 @@ export async function projectView(c: Customer, projectId: string, p0?: Project) 
   const feedback = await query<{ id: string; name: string; verdict: string; note: string | null; created_at: string; version_id: string | null }>('select id, name, verdict, note, created_at, version_id from studio_feedback where project_id = $1 order by created_at desc limit 30', [p.id]);
   const ready = await readyToOrder(p);
   const order = p.order_id ? await one<{ id: string; status: string; code: string }>('select id, status, code from orders where id = $1', [p.order_id]) : null;
+  const line = await lineOf(p.id);
   const credit = p.credit_coupon_id ? await one<{ code: string; ends_at: string | null; active: boolean; redeemed: number }>('select code, ends_at, active, (select count(*)::int from coupon_redemptions r where r.coupon_id = coupons.id) as redeemed from coupons where id = $1', [p.credit_coupon_id]) : null;
   const sp = 'error' in spec ? null : spec;
   return {
@@ -148,6 +151,9 @@ export async function projectView(c: Customer, projectId: string, p0?: Project) 
     vectorPaid: p.vector_paid,
     checkPaid: p.check_paid,
     order: order ? { id: order.id, status: order.status, code: order.code } : null,
+    // Set when this design is for a line in an order. While that order is unpaid the design is bought by adding it to the order.
+    orderLine: line ? { orderId: line.orderId, code: line.orderCode, status: line.orderStatus, open: ['draft', 'awaiting_payment'].includes(line.orderStatus), tier: line.tier, feeKobo: line.feeKobo, fee: naira(line.feeKobo) } : null,
+    fees: { standard: naira(studioFeeKobo(s, 'standard')), premium: naira(studioFeeKobo(s, 'premium')) },
     credit: credit ? { code: credit.code, kobo: p.credit_kobo, endsAt: credit.ends_at, active: credit.active, used: credit.redeemed > 0 } : { code: null, kobo: p.credit_kobo, endsAt: null, active: false, used: false },
     share: { url: `${appUrl()}/studio/share/${p.share_token}`, versionId: p.shared_version_id },
     likedVersionId: p.liked_version_id,

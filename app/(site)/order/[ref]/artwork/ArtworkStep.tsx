@@ -5,12 +5,14 @@ import { Check, Notice } from '@/components/Bits';
 import { naira } from '@/lib/money';
 import { CropMarks } from '@/components/Brand';
 import { useT } from '@/components/LangProvider';
+import { BleedFix } from '@/components/BleedFix';
 
-type Line = { id: string; status: 'pass' | 'warn' | 'stop'; label: string; message: string };
+type Line = { id: string; status: 'pass' | 'warn' | 'stop'; label: string; message: string; action?: string };
 type Outcome = { ok: true; fileId: string; check: { status: 'pass' | 'warn' | 'stop'; dpi: number | null; lines: Line[]; headline: string }; widthPx: number | null; heightPx: number | null; suggestion: { key: string; label: string } | null; attached: boolean } | { ok: false; error: string };
 
 type Props = {
   orderId: string;
+  itemId: string;
   productName: string;
   isFrame: boolean;
   currentSizeLabel: string | null;
@@ -34,6 +36,7 @@ export function ArtworkStep(p: Props) {
   const [pct, setPct] = useState<number | null>(null);
   const [out, setOut] = useState<Outcome | null>(null);
   const [preview, setPreview] = useState<{ url: string; name: string; pdf: boolean } | null>(null);
+  const [beforeId, setBeforeId] = useState<string | null>(null);
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -50,7 +53,7 @@ export function ArtworkStep(p: Props) {
       const fd = new FormData();
       fd.append('file', file);
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/api/orders/${p.orderId}/upload${asReference ? '?as=reference' : ''}`);
+      xhr.open('POST', `/api/orders/${p.orderId}/upload?item=${p.itemId}${asReference ? '&as=reference' : ''}`);
       xhr.upload.onprogress = (e) => e.lengthComputable && setPct(Math.round((e.loaded / e.total) * 100));
       xhr.onload = () => {
         try { resolve(JSON.parse(xhr.responseText)); }
@@ -63,7 +66,7 @@ export function ArtworkStep(p: Props) {
 
   async function onFile(file: File | undefined) {
     if (!file) return;
-    setErr(null); setOut(null); setAgree(false); setPct(0);
+    setErr(null); setOut(null); setAgree(false); setPct(0); setBeforeId(null);
     if (preview) URL.revokeObjectURL(preview.url);
     setPreview({ url: URL.createObjectURL(file), name: file.name, pdf: file.type === 'application/pdf' });
     // Say so at once instead of sending a file the site is going to refuse.
@@ -77,7 +80,7 @@ export function ArtworkStep(p: Props) {
     setErr(null); setOut(null); setAgree(false); setPct(0);
     if (preview) URL.revokeObjectURL(preview.url);
     setPreview({ url: `/api/brand-assets/${a.id}`, name: a.title, pdf: a.pdf });
-    const res = await fetch(`/api/orders/${p.orderId}/kit-asset`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assetId: a.id }) });
+    const res = await fetch(`/api/orders/${p.orderId}/kit-asset`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assetId: a.id, itemId: p.itemId }) });
     const r: Outcome = await res.json().catch(() => ({ ok: false, error: 'Something went wrong. Please try again.' }));
     setPct(null);
     setOut(r);
@@ -93,7 +96,7 @@ export function ArtworkStep(p: Props) {
 
   async function approve() {
     setBusy(true); setErr(null);
-    const res = await fetch(`/api/orders/${p.orderId}/approve`, { method: 'POST' });
+    const res = await fetch(`/api/orders/${p.orderId}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: p.itemId }) });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { setErr(j.error ?? 'Something went wrong.'); setBusy(false); return; }
     router.push(j.next);
@@ -102,8 +105,8 @@ export function ArtworkStep(p: Props) {
   async function submitBrief(fix = false) {
     setBusy(true); setErr(null);
     const body = fix
-      ? { purpose: 'Fix my file', wording: 'Please fix the file I uploaded so it prints sharp. Keep the design as it is.', fix: true, reference_file_ids: out && out.ok ? [out.fileId] : [] }
-      : { ...brief, reference_file_ids: refIds, use_kit: !!p.kit && useKit };
+      ? { purpose: 'Fix my file', wording: 'Please fix the file I uploaded so it prints sharp. Keep the design as it is.', fix: true, reference_file_ids: out && out.ok ? [out.fileId] : [], itemId: p.itemId }
+      : { ...brief, reference_file_ids: refIds, use_kit: !!p.kit && useKit, itemId: p.itemId };
     const res = await fetch(`/api/orders/${p.orderId}/artwork-path`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { setErr(j.error ?? 'Something went wrong.'); setBusy(false); return; }
@@ -151,7 +154,7 @@ export function ArtworkStep(p: Props) {
             onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0]); }}
             className="rounded-md2 border-2 border-dashed border-line-control bg-paper p-8 grid place-items-center gap-3 text-center"
           >
-            <input ref={input} id="file" type="file" className="sr-only" accept="image/jpeg,image/png,application/pdf" onChange={(e) => onFile(e.target.files?.[0])} />
+            <input ref={input} id="file" type="file" aria-label="Choose your artwork file" className="sr-only" accept="image/jpeg,image/png,application/pdf" onChange={(e) => onFile(e.target.files?.[0])} />
             <label htmlFor="file" className="btn-primary cursor-pointer">{preview ? tr('Choose a different file') : tr('Choose a file')}</label>
             <p className="text-[14px] text-muted">{tr('or drop it here')}</p>
             {pct != null && (
@@ -195,11 +198,23 @@ export function ArtworkStep(p: Props) {
                   {out.check.headline}
                 </p>
                 <ul className="grid gap-1.5 text-[15px]">
-                  {out.check.lines.filter((l) => l.status !== 'pass' || l.id === 'resolution' || l.id === 'shape').map((l) => (
+                  {out.check.lines.filter((l) => l.status !== 'pass' || l.id === 'resolution' || l.id === 'shape' || l.id === 'bleed').map((l) => (
                     <li key={l.id}><span className="font-bold">{l.label}: </span>{l.message}</li>
                   ))}
                 </ul>
               </div>
+
+              {status !== 'stop' && (
+                <BleedFix
+                  orderId={p.orderId} itemId={p.itemId} lines={out.check.lines} fileId={out.fileId} beforeFileId={beforeId} pdf={!!preview?.pdf} disabled={busy}
+                  onResult={(r) => {
+                    setAgree(false);
+                    setBeforeId(r.beforeFileId);
+                    setOut({ ...out, fileId: r.fileId, check: r.check as typeof out.check });
+                    setPreview((v) => (v ? { ...v, url: `/api/files/${r.fileId}?o=${p.orderId}` } : v));
+                  }}
+                />
+              )}
 
               {out.suggestion && p.isFrame && out.suggestion.label !== p.currentSizeLabel && (
                 <Notice tone="neutral"><p className="font-bold">Tip for a sharper frame</p><p>This photo will print sharpest at {out.suggestion.label}. You chose {p.currentSizeLabel}. Go back to change the size if you would like.</p></Notice>
@@ -254,7 +269,7 @@ export function ArtworkStep(p: Props) {
           <div><label className="label" htmlFor="b2">{tr('The exact words to use')}</label><textarea id="b2" className="field !py-3 min-h-[110px]" placeholder="Names, phone numbers, address, offers. We copy these exactly." value={brief.wording} onChange={(e) => setBrief({ ...brief, wording: e.target.value })} /></div>
           <div>
             <p className="label">{tr('Your logo')}</p>
-            <input id="logo" type="file" className="sr-only" accept="image/jpeg,image/png,application/pdf" onChange={(e) => onReference(e.target.files?.[0])} />
+            <input id="logo" type="file" aria-label="Choose a logo or reference picture" className="sr-only" accept="image/jpeg,image/png,application/pdf" onChange={(e) => onReference(e.target.files?.[0])} />
             <div className="flex flex-wrap items-center gap-3"><label htmlFor="logo" className="btn-secondary btn-sm cursor-pointer">{tr('Upload a logo')}</label><span className="text-[14px] text-muted">{refName ? tr('Added: {name}', { name: refName }) : tr('Or tell us below where to find it.')}</span></div>
           </div>
           <div><label className="label" htmlFor="b4">{tr('Colours you like')}</label><input id="b4" className="field" placeholder="For example: navy and gold" value={brief.colours} onChange={(e) => setBrief({ ...brief, colours: e.target.value })} /></div>

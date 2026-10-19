@@ -32,17 +32,17 @@ export async function queueMessage(q: Q, m: Queue) {
 /** The name of the approved WhatsApp template. Pidgin versions end in _pcm and are approved under the English language setting. */
 export const whatsappTemplateName = (template: TemplateKey, lang: Lang = 'en') => `brandit_${template}${lang === 'pcm' ? '_pcm' : ''}`;
 
-async function sendWhatsApp(phone: string, template: TemplateKey, vars: Record<string, string>, lang: Lang = 'en'): Promise<void> {
-  const res = await fetch(`https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+async function sendWhatsApp(phone: string, template: TemplateKey, vars: Record<string, string>, lang: Lang = 'en', doFetch: typeof fetch = fetch, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const res = await doFetch(`https://graph.facebook.com/v20.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       to: phone.replace(/^\+/, ''),
       type: 'template',
       template: {
         name: whatsappTemplateName(template, lang),
-        language: { code: process.env.WHATSAPP_TEMPLATE_LANG ?? 'en' },
+        language: { code: env.WHATSAPP_TEMPLATE_LANG ?? 'en' },
         components: [{ type: 'body', parameters: TEMPLATES[template].vars.map((k) => ({ type: 'text', text: String(vars[k] ?? '') })) }],
       },
     }),
@@ -50,17 +50,35 @@ async function sendWhatsApp(phone: string, template: TemplateKey, vars: Record<s
   if (!res.ok) throw new Error(`WhatsApp ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
-async function sendSms(phone: string, text: string): Promise<void> {
-  const res = await fetch('https://api.ng.termii.com/api/sms/send', {
+async function sendSms(phone: string, text: string, doFetch: typeof fetch = fetch, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const res = await doFetch('https://api.ng.termii.com/api/sms/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to: phone.replace(/^\+/, ''), from: process.env.SMS_SENDER_ID ?? 'Brandit', sms: text, type: 'plain', channel: 'generic', api_key: process.env.SMS_API_KEY }),
+    body: JSON.stringify({ to: phone.replace(/^\+/, ''), from: env.SMS_SENDER_ID ?? 'Brandit', sms: text, type: 'plain', channel: 'generic', api_key: env.SMS_API_KEY }),
   });
   if (!res.ok) throw new Error(`SMS ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
-export const whatsappOn = () => !!(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
-export const smsOn = () => !!process.env.SMS_API_KEY;
+export const whatsappOn = (env: NodeJS.ProcessEnv = process.env) => !!(env.WHATSAPP_ACCESS_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID);
+export const smsOn = (env: NodeJS.ProcessEnv = process.env) => !!env.SMS_API_KEY;
+
+/**
+ * Send one message to our own team right now, without the database (the alert has to get out even when the database is
+ * the thing that broke). WhatsApp first, SMS if that fails or is not set up. Never throws.
+ */
+export async function sendStaffNow(
+  phone: string, template: TemplateKey, vars: Record<string, string>,
+  env: NodeJS.ProcessEnv = process.env, doFetch: typeof fetch = fetch,
+): Promise<{ ok: boolean; channel: 'whatsapp' | 'sms' | 'none'; error?: string }> {
+  let error: string | undefined;
+  if (whatsappOn(env)) {
+    try { await sendWhatsApp(phone, template, vars, 'en', doFetch, env); return { ok: true, channel: 'whatsapp' }; } catch (e) { error = (e as Error).message; }
+  }
+  if (smsOn(env)) {
+    try { await sendSms(phone, render(template, vars, 'en'), doFetch, env); return { ok: true, channel: 'sms', error: error ? `WhatsApp failed, sent by SMS: ${error}` : undefined }; } catch (e) { error = `${error ? error + '; ' : ''}${(e as Error).message}`; }
+  }
+  return { ok: false, channel: 'none', error: error ?? 'Neither WhatsApp nor SMS is set up.' };
+}
 
 /** Send an SMS directly (sign-in codes). Returns false when no provider is configured. */
 export async function sendDirectSms(phone: string, text: string): Promise<boolean> {

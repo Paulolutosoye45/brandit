@@ -28,7 +28,8 @@ export function TrackerLive({ initial, whatsapp }: { initial: Tracker; whatsapp:
     return () => clearInterval(id);
   }, [t.token, t.delivered]);
 
-  const photo = t.qcPhotoFileId ? `/api/files/${t.qcPhotoFileId}?t=${t.token}` : null;
+  const multi = t.lines.length > 1;
+  const photos = t.lines.filter((l) => l.qcPhotoFileId).map((l) => ({ id: l.itemId, name: l.name, src: `/api/files/${l.qcPhotoFileId}?t=${t.token}` }));
   return (
     <div className="mx-auto max-w-[760px] px-5 pb-12 grid gap-5">
       <div className="rounded-lg2 bg-ink text-white p-6 grid gap-2">
@@ -42,12 +43,15 @@ export function TrackerLive({ initial, whatsapp }: { initial: Tracker; whatsapp:
 
       {!t.paid && <Notice tone="warn"><p className="font-bold">{tr('This order has not been paid yet.')}</p><Link className="underline font-bold" href={`/checkout/${t.orderId}`}>{tr('Continue to checkout')}</Link></Notice>}
 
-      {t.needsFileFix && (
-        <Notice tone="warn"><p className="font-bold">{tr('We need a new file from you.')}</p><p>{t.pausedReason}</p><Link className="btn-primary btn-sm mt-3" href={`/order/${t.orderId}/artwork?fix=1`}>{tr('Upload a new file')}</Link></Notice>
-      )}
-      {t.proofToken && !t.needsFileFix && (
-        <Notice tone="warn"><p className="font-bold">{tr('Your proof is ready.')}</p><p>{tr('Nothing prints until you approve it.')}</p><Link className="btn-primary btn-sm mt-3" href={`/proof/${t.proofToken}`}>{tr('Look at your proof')}</Link></Notice>
-      )}
+      {t.lines.filter((l) => l.needsFileFix).map((l) => (
+        <Notice key={`fix-${l.itemId}`} tone="warn"><p className="font-bold">{multi ? `${tr('We need a new file from you.')} (${l.name})` : tr('We need a new file from you.')}</p><p>{l.pausedReason}</p><Link className="btn-primary btn-sm mt-3" href={`/order/${t.orderId}/artwork?fix=1&item=${l.itemId}`}>{tr('Upload a new file')}</Link></Notice>
+      ))}
+      {t.lines.filter((l) => l.studioProjectId).map((l) => (
+        <Notice key={`studio-${l.itemId}`} tone="warn"><p className="font-bold">{multi ? `${tr('Your Studio design is waiting for you.')} (${l.name})` : tr('Your Studio design is waiting for you.')}</p><p>{tr('Pick the design you like and approve it. Printing starts right after.')}</p><Link className="btn-primary btn-sm mt-3" href={`/studio/p/${l.studioProjectId}`}>{tr('Open my design')}</Link></Notice>
+      ))}
+      {t.lines.filter((l) => l.proofToken && !l.needsFileFix).map((l) => (
+        <Notice key={`proof-${l.itemId}`} tone="warn"><p className="font-bold">{multi ? `${tr('Your proof is ready.')} (${l.name})` : tr('Your proof is ready.')}</p><p>{tr('Nothing prints until you approve it.')}</p><Link className="btn-primary btn-sm mt-3" href={`/proof/${l.proofToken}`}>{tr('Look at your proof')}</Link></Notice>
+      ))}
 
       {t.riderNearby && !t.delivered && (
         <Notice tone="good"><p className="font-bold">{tr('Your rider says they are close.')}</p><p>{tr('Have your delivery code ready.')}</p></Notice>
@@ -70,12 +74,26 @@ export function TrackerLive({ initial, whatsapp }: { initial: Tracker; whatsapp:
         </div>
       )}
 
-      {photo && (
-        <figure className="card p-4 grid gap-2">
+      {photos.map((ph) => (
+        <figure key={ph.id} className="card p-4 grid gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photo} alt={tr('Photo of your finished job')} className="w-full rounded-sm2 bg-placeholder max-h-[420px] object-contain" />
-          <figcaption className="text-[14px] text-muted">{tr('Here is your finished job, checked and photographed before it left us.')}</figcaption>
+          <img src={ph.src} alt={tr('Photo of your finished job')} className="w-full rounded-sm2 bg-placeholder max-h-[420px] object-contain" />
+          <figcaption className="text-[14px] text-muted">{multi ? `${ph.name}. ` : ''}{tr('Here is your finished job, checked and photographed before it left us.')}</figcaption>
         </figure>
+      ))}
+
+      {multi && (
+        <section className="card p-5 grid gap-3" aria-label={tr('Your products')}>
+          <h2 className="text-[20px]">{tr('Your products')}</h2>
+          <ul className="grid divide-y divide-line">
+            {t.lines.map((l) => (
+              <li key={l.itemId} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
+                <span className="min-w-0 font-bold">{l.summary}</span>
+                <span className="text-[14px] text-muted">{l.stage && l.stage !== 'paid' ? tr(l.stageLabel) : tr(l.proofText)}{l.stage && ['file_check', 'proof'].includes(l.stage) ? ` · ${tr(l.proofText)}` : ''}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section className="card p-5" aria-label={tr('Order progress')}>

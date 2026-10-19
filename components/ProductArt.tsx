@@ -50,7 +50,7 @@ export function ProductArt({ slug, name, className = 'h-full w-full' }: { slug: 
         <g transform="rotate(10 160 80)"><rect x="116" y="38" width="76" height="76" rx="14" fill={WHITE} stroke={INK} strokeWidth="2.5" /><path d="M192 90 Q176 94 170 114 L192 114 Z" fill={SOFT} stroke={INK} strokeWidth="2" strokeLinejoin="round" /><rect x="130" y="56" width="40" height="8" rx="4" fill={INK} /><circle cx="150" cy="86" r="9" fill={YEL} /></g>
       </>
     ),
-    'branded-t-shirts': (
+    'tees-and-totes': (
       <>
         <path d="M82 30 L54 44 L36 78 L62 90 L68 80 L68 150 L172 150 L172 80 L178 90 L204 78 L186 44 L158 30 C152 42 138 50 120 50 C102 50 88 42 82 30 Z" fill={INK} />
         <path d="M82 30 C88 42 102 50 120 50 C138 50 152 42 158 30" fill="none" stroke="#16324F" strokeWidth="5" />

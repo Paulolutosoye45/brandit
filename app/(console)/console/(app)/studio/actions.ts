@@ -14,6 +14,7 @@ import { generateArt } from '@/lib/studio/engine';
 import { ENGINE_IDS, vendorsOn, resolveEngine } from '@/lib/studio/providers/catalog';
 import type { EngineId } from '@/lib/studio/providers/types';
 import { buildArt, paletteById } from '@/lib/studio/prompts';
+import { trail } from '@/lib/trail';
 
 const back = (path: string, msg: { e?: string; ok?: string }, hash = '') => {
   revalidatePath('/console/studio');
@@ -34,6 +35,7 @@ export async function saveGroupAction(fd: FormData) {
   if (v.studio_premium_kobo < v.studio_standard_kobo) return back('/console/studio/settings', { e: 'Premium should cost more than Standard.' }, `#${gid}`);
   for (const [k, val] of Object.entries(parsed.values)) await setSetting(k as any, val as any);
   await audit(null, `staff`, 'settings_changed', { group: gid, keys: Object.keys(parsed.values) });
+  await trail({ area: 'studio', action: 'settings', target: g.title, summary: `Saved Studio settings: ${g.title}`, detail: { keys: Object.keys(parsed.values) } });
   return back('/console/studio/settings', { ok: `${g.title} saved. It applies straight away.` }, `#${gid}`);
 }
 
@@ -45,6 +47,7 @@ export async function saveSwitchesAction(fd: FormData) {
   const acc = String(fd.get('studio_access') ?? '');
   if (acc === 'everyone' || acc === 'invited') await setSetting('studio_access', acc);
   await audit(null, 'staff', 'switches_changed', {});
+  await trail({ area: 'studio', action: 'switches', summary: `Saved Studio switches (Studio ${fd.get('studio_enabled') === 'on' ? 'on' : 'off'}, access: ${acc || 'unchanged'})` });
   return back('/console/studio', { ok: 'Saved.' });
 }
 
@@ -60,11 +63,13 @@ export async function addInviteAction(fd: FormData) {
     await query('insert into studio_invites (identifier, note) values ($1,$2) on conflict (identifier) do nothing', [id, note || null]);
     added++;
   }
+  if (added) await trail({ area: 'studio', action: 'invite_added', summary: `Invited ${added} ${added === 1 ? 'person' : 'people'} to Studio` });
   return back('/console/studio/settings', bad.length ? { e: `Added ${added}. These were not a phone number or email: ${bad.slice(0, 5).join(', ')}` } : { ok: `Added ${added}.` }, '#invites');
 }
 export async function removeInviteAction(fd: FormData) {
   await requireStaff('manage_studio');
   await query('delete from studio_invites where identifier = $1', [String(fd.get('id') ?? '')]);
+  await trail({ area: 'studio', action: 'invite_removed', summary: 'Removed a Studio invite' });
   return back('/console/studio/settings', { ok: 'Removed.' }, '#invites');
 }
 

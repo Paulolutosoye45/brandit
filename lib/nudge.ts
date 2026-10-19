@@ -1,3 +1,4 @@
+import { nameSql } from './lines';
 import { query, one, tx } from './db';
 import { getSettings } from './settings';
 import { appUrl, queueMessage } from './messages';
@@ -26,12 +27,10 @@ export async function sendNudges(now = new Date()): Promise<number> {
   if (!s.nudge_enabled || !inNudgeHours(now)) return 0;
   const after = Math.max(30, Math.trunc(s.nudge_after_minutes) || 120);
   const rows = await query<any>(
-    `select o.id, o.code, o.public_token, coalesce(i.label, p.name) as product, split_part(coalesce(c.name, ''), ' ', 1) as first_name
+    `select o.id, o.code, o.public_token, ${nameSql('o')} as product, split_part(coalesce(c.name, ''), ' ', 1) as first_name
        from orders o
        join customers c on c.id = o.customer_id
-       join order_items i on i.order_id = o.id
-       join products p on p.id = i.product_id
-      where o.status = 'awaiting_payment' and o.nudged_at is null
+      where o.status = 'awaiting_payment' and exists (select 1 from order_items i where i.order_id = o.id) and o.nudged_at is null
         and o.checkout_saved_at <= $1 and o.checkout_saved_at > $2
         and c.nudge_ok and coalesce(c.whatsapp_phone, c.phone) is not null
         and not exists (select 1 from payments y where y.order_id = o.id and y.status = 'success')

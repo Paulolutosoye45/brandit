@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import { getSettings, setSetting } from '@/lib/settings';
 import { syncReferralCoupons } from '@/lib/referrals';
+import { trail, trailProduct } from '@/lib/trail';
 
 const back = (msg: { e?: string; ok?: string }, hash = '') => {
   revalidatePath('/console/growth');
@@ -19,7 +20,21 @@ export async function saveNudgeAction(fd: FormData) {
   if (!(mins >= 30 && mins <= 1440)) return back({ e: 'Wait between 30 minutes and 24 hours (1440 minutes) before the reminder.' }, '#nudge');
   await setSetting('nudge_enabled', fd.get('nudge_enabled') === 'on');
   await setSetting('nudge_after_minutes', mins);
+  await trail({ area: 'marketing', action: 'nudge', summary: `Saved the unpaid-order reminder (${fd.get('nudge_enabled') === 'on' ? `after ${mins} minutes` : 'off'})` });
   back({ ok: 'Reminder settings saved.' }, '#nudge');
+}
+
+export async function saveRemindersAction(fd: FormData) {
+  await requireStaff('manage_growth');
+  const days = Math.trunc(num(fd.get('reminder_days')));
+  const credit = Math.trunc(num(fd.get('sample_credit_days')));
+  if (!(days >= 14 && days <= 365)) return back({ e: 'Remind people to order again after 14 to 365 days.' }, '#reminders');
+  if (!(credit >= 7 && credit <= 365)) return back({ e: 'A sample-pack credit must stay valid for 7 to 365 days.' }, '#reminders');
+  await setSetting('reminders_enabled', fd.get('reminders_enabled') === 'on');
+  await setSetting('reminder_days', days);
+  await setSetting('sample_credit_days', credit);
+  await trail({ area: 'marketing', action: 'reminders', summary: `Saved repeat reminders (${fd.get('reminders_enabled') === 'on' ? `after ${days} days` : 'off'}) and the sample-pack credit (${credit} days)` });
+  back({ ok: 'Saved.' }, '#reminders');
 }
 
 export async function saveReferralAction(fd: FormData) {
@@ -43,6 +58,7 @@ export async function saveReferralAction(fd: FormData) {
   // Every personal code follows the new numbers, so nobody holds an old offer by mistake.
   const s = await getSettings();
   await syncReferralCoupons({ referral_friend_percent: s.referral_friend_percent, referral_friend_cap_kobo: s.referral_friend_cap_kobo });
+  await trail({ area: 'marketing', action: 'referral', summary: `Saved referral settings (${percent}% for a friend, reward ₦${reward / 100})` });
   back({ ok: 'Referral settings saved. Every personal code now uses the new numbers.' }, '#referral');
 }
 
@@ -50,5 +66,6 @@ export async function saveSwitchesAction(fd: FormData) {
   await requireStaff('manage_growth');
   await setSetting('windows_enabled', fd.get('windows_enabled') === 'on');
   await setSetting('pidgin_enabled', fd.get('pidgin_enabled') === 'on');
+  await trail({ area: 'settings', action: 'switches', summary: `Saved site switches (morning/afternoon delivery ${fd.get('windows_enabled') === 'on' ? 'on' : 'off'}, Pidgin ${fd.get('pidgin_enabled') === 'on' ? 'on' : 'off'})` });
   back({ ok: 'Saved.' }, '#switches');
 }

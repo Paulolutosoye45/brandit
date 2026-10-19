@@ -558,6 +558,8 @@ export async function approve(c: Customer, id: string, versionId: string, o: { s
     const { ensureCredit, resumeCredit } = await import('./purchases');
     await resumeCredit(id);
     await ensureCredit(id).catch(() => {});
+    // A design that was paid for inside an order goes straight onto that order's line.
+    await (await import('./inOrder')).attachApproved(id).catch((e) => console.error('[brandit] could not put the design on the order:', e?.message ?? e));
   }
   return { ok: true, sha256: v.sha256, review };
 }

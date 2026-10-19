@@ -32,7 +32,10 @@ export default async function Scan(
   const params = await props.params;
   const staff = await requireStaff();
   const j = await one<any>(
-    `select j.id, j.stage, j.press_id, o.code, o.speed, coalesce(i.label, p.name) as product, i.quantity from jobs j join orders o on o.id = j.order_id
+    `select j.id, j.stage, j.press_id, o.code, o.speed, coalesce(i.label, p.name) as product, i.quantity,
+       (select count(*)::int from order_items x where x.order_id = o.id) as line_count,
+       (select count(*)::int from order_items x where x.order_id = o.id and (x.position, x.id::text) <= (i.position, i.id::text)) as line_no
+     from jobs j join orders o on o.id = j.order_id
      join order_items i on i.id = j.order_item_id join products p on p.id = i.product_id where j.id = $1`, [params.id]);
   if (!j || (staff.role === 'partner_press' && j.press_id !== staff.press_id)) notFound();
   const stage = j.stage as Stage;
@@ -41,6 +44,7 @@ export default async function Scan(
       <div className="card p-6 grid gap-1 text-center shadow-press-sm">
         <p className="font-display font-extrabold text-[44px] leading-none">{j.code}</p>
         <p className="font-bold text-[20px]">{j.quantity.toLocaleString('en-US')} × {j.product}</p>
+        {j.line_count > 1 && <p className="text-[15px] font-bold text-muted">Product {j.line_no} of {j.line_count} in this order</p>}
         <p className="text-muted">Now at: <span className="font-bold text-ink">{STAGE_LABEL[stage]}</span>{j.speed === '24h' ? ' · 24-hour' : ''}</p>
       </div>
       {searchParams.ok && <Notice tone="good">Moved to the quality check. The customer has been updated.</Notice>}

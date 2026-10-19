@@ -16,6 +16,14 @@ describe('the startup hook', () => {
     expect(s, 'the hook must not name lib/ directly').not.toMatch(/lib\//);
   });
 
+  it('passes server errors to the alert hook through a plain dynamic import, so Edge never bundles the database driver', () => {
+    const s = src('instrumentation.ts');
+    expect(s).toMatch(/export async function onRequestError\([\s\S]*import\('\.\/instrumentation-error'\)/);
+    const e = src('instrumentation-error.ts');
+    expect(e).toContain("from './lib/errorReport'");
+    expect(src('lib/errorReport.ts'), 'the alert code must use fetch only').not.toMatch(/from 'node:|from "node:|require\(|from '\.\/db'/);
+  });
+
   it('keeps the work, and so the database driver, in instrumentation-node.ts', () => {
     const n = src('instrumentation-node.ts');
     expect(n).toContain("from './lib/startup'");

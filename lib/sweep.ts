@@ -11,6 +11,8 @@ import { issueReferralRewards } from './referrals';
 import { cleanupRiderData } from './rider';
 import { cleanupReviewPhotos } from './reviewPhotos';
 import { runStudioSweep } from './studio/sweep';
+import { sendReminders } from './reminders';
+import { issueSampleCredits } from './samplePack';
 
 /**
  * The checks that make the promise real. Runs every five minutes (Vercel cron or any scheduler).
@@ -23,10 +25,11 @@ import { runStudioSweep } from './studio/sweep';
  *  7. Pays out referral rewards for friends whose order was delivered.
  *  8. Clears rider locations of finished deliveries and old rejected review photos.
  *  9. Brandit Studio housekeeping: designs past their keep-for date, jobs that stopped, payments not yet applied.
+ * 10. Repeat reminders (weekly, and "running low?") and the credit that comes back from a sample pack.
  */
 export async function runSweep(now = new Date()) {
   const s = await getSettings();
-  const out = { atRisk: 0, late: 0, reviewRequests: 0, deleted: 0, messages: 0, customClosed: 0, customFiles: 0, nudges: 0, rewards: 0, riderCleared: 0, photosCleared: 0, studio: { purged: 0, recovered: 0, applied: 0, sketchLogs: 0 } };
+  const out = { atRisk: 0, late: 0, reviewRequests: 0, deleted: 0, messages: 0, customClosed: 0, customFiles: 0, nudges: 0, rewards: 0, riderCleared: 0, photosCleared: 0, studio: { purged: 0, recovered: 0, applied: 0, sketchLogs: 0 }, reminders: { weekly: 0, low: 0 }, sampleCredits: 0 };
 
   // 1. At risk
   const jobs = await query<any>(
@@ -52,8 +55,10 @@ export async function runSweep(now = new Date()) {
 
   // 2. Late 24-hour orders refund their delivery fee by themselves
   const late = await query<any>(
-    `select o.* from orders o join jobs j on j.order_id = o.id
-     where o.speed = '24h' and o.status in ('paid','in_production') and o.promised_at < $1 and not j.clock_paused
+    `select o.* from orders o
+     where o.speed = '24h' and o.status in ('paid','in_production') and o.promised_at < $1
+       and exists (select 1 from jobs j where j.order_id = o.id)
+       and not exists (select 1 from jobs j where j.order_id = o.id and j.clock_paused)
        and not exists (select 1 from claims c where c.order_id = o.id and c.kind = 'late')`,
     [now.toISOString()],
   );
@@ -102,6 +107,15 @@ export async function runSweep(now = new Date()) {
     out.deleted++;
   }
 
+  // 4b. Files of a line the customer took out of their basket. A copy made for "same again" may share the stored file, so that one stays.
+  const orphans = await query<any>("select id, storage_key from files where order_item_id is null and delete_after is not null and delete_after < $1 and kind = 'artwork' and storage_key <> 'deleted.bin' limit 200", [now.toISOString()]);
+  for (const f of orphans) {
+    const shared = await query("select 1 from files where storage_key = $1 and id <> $2 and storage_key <> 'deleted.bin' limit 1", [f.storage_key, f.id]);
+    if (shared.length === 0) await deleteFile(f.storage_key);
+    await query("update files set storage_key = 'deleted.bin', delete_after = null where id = $1", [f.id]);
+    out.deleted++;
+  }
+
   // 5. Custom requests nobody came back for, and the reference files that went with them
   const custom = await cleanupStale(now);
   out.customClosed = custom.closed;
@@ -117,6 +131,10 @@ export async function runSweep(now = new Date()) {
 
   // 9. Brandit Studio. Each step is guarded inside, and none may stop the sweep.
   try { out.studio = await runStudioSweep(now); } catch (e: any) { console.error('[brandit] studio sweep failed:', e?.message ?? e); }
+
+  // 10. Repeat reminders and sample-pack credit. Each is guarded; neither may stop the sweep.
+  try { out.reminders = await sendReminders(now); } catch (e: any) { console.error('[brandit] reminders failed:', e?.message ?? e); }
+  try { out.sampleCredits = await issueSampleCredits(now); } catch (e: any) { console.error('[brandit] sample credits failed:', e?.message ?? e); }
 
   out.messages = await flushMessages();
   return out;

@@ -114,7 +114,14 @@ async function boot(): Promise<Driver> {
   }
   const { seedIfEmpty } = await import('./seed');
   await seedIfEmpty(d);
+  const { upgradeCatalogue } = await import('./catalogueInstall');
+  await upgradeCatalogue(d);
+  const { ensureSamplePack } = await import('./samplePack');
+  await ensureSamplePack(d);
   if (!isDemo()) {
+    // Demo team accounts (…@brandit.test, PIN 1234) must never work on a live site, whatever seeded them.
+    const off = await d.query<{ email: string }>("update staff set active = false where email like '%@brandit.test' and active returning email");
+    if (off.length) console.error(`[brandit] Switched off ${off.length} demo team account(s) (…@brandit.test, PIN 1234). They must never work on a live site.`);
     const { ensureAdmin } = await import('./team');
     const r = await ensureAdmin(process.env, d);
     if (r === 'weak-pin') console.error('[brandit] ADMIN_PIN is too easy or the wrong length (6 to 12 digits, not a run like 123456). No admin was created.');

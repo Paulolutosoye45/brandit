@@ -7,6 +7,7 @@ import { productionDay, describeWhen, describeDay, durationText } from '@/lib/ti
 import { STAGE_LABEL, type Stage } from '@/lib/types';
 import { effectiveWindow, windowText } from '@/lib/windows';
 import { can } from '@/lib/permissions';
+import { proofLabel, proofStateOf } from '@/lib/lines';
 import { StatusPill } from '@/components/Bits';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { runChecks, togglePause } from './actions';
@@ -58,19 +59,20 @@ export default async function Queue() {
       )}
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[860px] text-left text-[15px]">
+        <table className="w-full min-w-[960px] text-left text-[15px]">
           <thead><tr className="text-[13px] text-muted border-b border-line">
-            {['Job', 'Product', 'Stage', 'Promised', 'Time left', 'Status', ''].map((h) => <th key={h} scope="col" className="px-4 py-3 font-bold">{h}</th>)}
+            {['Job', 'Product', 'Stage', 'Proof', 'Promised', 'Time left', 'Status', ''].map((h) => <th key={h} scope="col" className="px-4 py-3 font-bold">{h}</th>)}
           </tr></thead>
           <tbody>
-            {jobs.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">Nothing in production. New paid orders appear here the moment they are paid.</td></tr>}
+            {jobs.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-muted">Nothing in production. New paid orders appear here the moment they are paid.</td></tr>}
             {jobs.map((j) => {
               const left = j.promised_at ? new Date(j.promised_at).getTime() - now.getTime() : null;
               return (
                 <tr key={j.id} className="border-b border-line last:border-0">
-                  <td className="px-4 py-3 font-bold whitespace-nowrap"><Link className="underline" href={`/console/jobs/${j.id}`}>{j.code}</Link>{j.speed === '24h' && <span className="pill bg-ink text-white ml-2">24h</span>}</td>
+                  <td className="px-4 py-3 font-bold whitespace-nowrap"><Link className="underline" href={`/console/jobs/${j.id}`}>{j.code}</Link>{j.line_count > 1 && <span className="ml-2 text-[13px] font-normal text-muted">{j.line_no} of {j.line_count}</span>}{j.speed === '24h' && <span className="pill bg-ink text-white ml-2">24h</span>}</td>
                   <td className="px-4 py-3">{j.quantity.toLocaleString('en-US')} × {j.product_name}{j.width_ft ? ` ${j.width_ft}×${j.height_ft} ft` : ''}{j.reprint_count > 0 && <span className="pill bg-warn-tint text-warn ml-2">Reprint</span>}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{STAGE_LABEL[j.stage as Stage]}{j.artwork_path === 'design' && j.stage === 'file_check' ? ' (design)' : ''}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{STAGE_LABEL[j.stage as Stage]}{j.artwork_path === 'studio' ? ' (Studio)' : j.artwork_path === 'design' && j.stage === 'file_check' ? ' (design)' : ''}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-[14px]">{proofLabel(proofStateOf(j as any, { stage: j.stage }))}{j.proof_status === 'changes_requested' && <span className="block text-[13px] text-bad">changes asked for</span>}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{j.promised_at ? describeWhen(new Date(j.promised_at)) : 'Not set yet'}{(() => { const w = effectiveWindow(j.delivery_window, { speed: j.speed, pickup: j.pickup, enabled: s.windows_enabled }); return w ? <span className="block text-[13px] text-muted">Rider: {windowText(w)}</span> : null; })()}</td>
                   <td className={`px-4 py-3 font-bold whitespace-nowrap tabular ${j.status === 'late' ? 'text-bad' : ''}`}>{left == null || j.clock_paused ? '—' : left < 0 ? `${durationText(-left)} late` : durationText(left)}</td>
                   <td className="px-4 py-3"><StatusPill status={j.status} /></td>

@@ -29,6 +29,7 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
     const kit = me ? await brandSnapshot(me.id) : null;
     if (kit) withKit = { ...brief, colours: brief.colours || kit.colours, logo_note: brief.logo_note || 'Use the logo and colours from the customer\'s brand kit.', brand_kit: kit };
   }
-  await setArtworkPath(params.id, 'design', withKit);
+  const itemId = typeof b?.itemId === 'string' && /^[0-9a-f-]{36}$/.test(b.itemId) ? b.itemId : null;
+  await setArtworkPath(params.id, 'design', withKit, itemId);
   return NextResponse.json({ ok: true, next: `/checkout/${params.id}` });
 }

@@ -49,3 +49,31 @@ export async function processImage(
     throw new ImageError(`We could not read "${name}". Try saving it again as a JPG and upload that.`);
   }
 }
+
+export type Bled = { buf: Buffer; mime: 'image/jpeg' | 'image/png'; widthPx: number; heightPx: number; bleedPx: number };
+
+/**
+ * Give a design an extra edge on every side by mirroring its outermost pixels outward.
+ * The design itself is not touched or resized: the new picture is the old one with a border that continues it.
+ * `trimWIn` and `trimHIn` are the finished size; the dots per inch come from how big the picture is against that.
+ */
+export async function addBleed(buf: Buffer, o: { trimWIn: number; trimHIn: number; bleedIn: number }): Promise<Bled> {
+  const kind = sniffImage(buf);
+  if (kind !== 'image/jpeg' && kind !== 'image/png') throw new ImageError('Only JPG and PNG files can be given an extra edge here.');
+  const sharp = await sharpOrNull();
+  if (!sharp) throw new ImageError('Files cannot be processed on this server right now. Please try again later.');
+  try {
+    const base = sharp(buf, { failOn: 'error', limitInputPixels: 80_000_000 }).rotate();
+    const { data, info } = await base.toBuffer({ resolveWithObject: true });
+    const portrait = info.height > info.width;
+    const [tw, th] = portrait === o.trimHIn > o.trimWIn ? [o.trimWIn, o.trimHIn] : [o.trimHIn, o.trimWIn];
+    const dpi = Math.min(info.width / tw, info.height / th);
+    const bleedPx = Math.max(4, Math.round(dpi * o.bleedIn));
+    const out = sharp(data).extend({ top: bleedPx, bottom: bleedPx, left: bleedPx, right: bleedPx, extendWith: 'mirror' });
+    const done = kind === 'image/png' ? await out.png({ compressionLevel: 6 }).toBuffer({ resolveWithObject: true }) : await out.jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer({ resolveWithObject: true });
+    return { buf: done.data, mime: kind, widthPx: done.info.width, heightPx: done.info.height, bleedPx };
+  } catch (e) {
+    if (e instanceof ImageError) throw e;
+    throw new ImageError('We could not add an extra edge to this file. Upload a copy that has one, or let us fix it for you.');
+  }
+}

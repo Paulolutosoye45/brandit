@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getCustomer } from '@/lib/session';
 import { getSettings } from '@/lib/settings';
+import { getBusiness } from '@/lib/business';
 import { contactPhone } from '@/lib/identity';
 import { formatLocal } from '@/lib/phoneFormat';
 import { PageHead } from '@/components/Bits';
@@ -42,7 +43,7 @@ export default async function PlanEvent(props: { searchParams: Promise<{ type?: 
           today={today}
           defaults={{ name: me?.name ?? '', phone: local(me ? contactPhone(me) : null), email: me?.email ?? '' }}
           replyHours={s.custom_reply_hours}
-          whatsapp={process.env.NEXT_PUBLIC_WHATSAPP ?? null}
+          whatsapp={(await getBusiness()).whatsapp}
         />
         <aside className="grid gap-4 lg:sticky lg:top-[84px]" aria-label="How it works">
           <ol className="card grid gap-4 p-5">

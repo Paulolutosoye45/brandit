@@ -71,9 +71,16 @@ export async function moveJob(jobId: string, to: Stage, o: MoveOpts, now = new D
   }
   if (from === 'quality_check' && to === 'printing' && !o.note?.trim()) throw new JobError('Say what failed the check, so it is reprinted right.');
 
+  // The other lines of the same order. An order is one delivery, so some things happen only when the last line gets there.
+  const siblings = await query<{ id: string; stage: Stage; artwork_path: string | null }>(
+    'select j.id, j.stage, i.artwork_path from jobs j join order_items i on i.id = j.order_item_id where j.order_id = $1 and j.id <> $2', [order.id, job.id]);
+  const designWaiting = siblings.some((s) => (s.artwork_path === 'design' || s.artwork_path === 'studio') && ['paid', 'file_check', 'proof'].includes(s.stage));
+
   // Printing starts the clock again if it was paused, or sets it for the first time on a design job.
-  const resuming = to === 'printing' && (job.clock_paused || !order.promised_at) && from !== 'quality_check';
+  // With a designer's line still waiting for its proof, the arrival time waits for the last proof.
+  const resuming = to === 'printing' && (job.clock_paused || !order.promised_at) && from !== 'quality_check' && !designWaiting;
   const pair = resuming ? await promiseFor(order.id, now) : null;
+  const firstInProduction = order.status !== 'in_production';
 
   await tx(async (q: Q) => {
     await q.query('update jobs set stage = $2, at_risk = false, clock_paused = false, paused_reason = null, paused_at = null, updated_at = now() where id = $1', [job.id, to]);
@@ -89,22 +96,24 @@ export async function moveJob(jobId: string, to: Stage, o: MoveOpts, now = new D
       if (changed && from === 'file_check') await queueMessage(q, { orderId: order.id, template: 'new_time', vars: { arrive_line: arriveLine({ speed: f.tier, promisedAt, pickup: order.pickup }, now), link } });
     }
 
+    // The customer hears once that work has started, not once for every line.
     if (to === 'printing' && from === 'file_check') {
       await q.query("update orders set status = 'in_production' where id = $1", [order.id]);
-      await queueMessage(q, { orderId: order.id, template: 'file_checked', vars: { staff_name: a?.name.split(' (')[0] ?? 'Our file desk' } });
+      if (firstInProduction) await queueMessage(q, { orderId: order.id, template: 'file_checked', vars: { staff_name: a?.name.split(' (')[0] ?? 'Our file desk' } });
     }
     if (to === 'printing' && from === 'proof') {
       await q.query("update orders set status = 'in_production' where id = $1", [order.id]);
-      await queueMessage(q, { orderId: order.id, template: 'printing', vars: { code: order.code, arrive_line: arriveLine({ speed: order.speed, promisedAt, pickup: order.pickup }, now) } });
+      if (firstInProduction || pair) await queueMessage(q, { orderId: order.id, template: 'printing', vars: { code: order.code, arrive_line: arriveLine({ speed: pair?.fresh.tier ?? order.speed, promisedAt, pickup: order.pickup }, now) } });
     }
     if (to === 'printing' && from === 'quality_check') {
       await q.query('update jobs set reprint_count = reprint_count + 1 where id = $1', [job.id]);
     }
-    if (to === 'out_for_delivery') {
+    // One delivery: the rider leaves, and the customer is told, when the last line is ready.
+    if (to === 'out_for_delivery' && siblings.every((s) => ['out_for_delivery', 'delivered'].includes(s.stage))) {
       await q.query('update deliveries set dispatched_at = now() where order_id = $1', [order.id]);
       await queueMessage(q, { orderId: order.id, template: order.pickup ? 'ready_for_pickup' : 'out_for_delivery', vars: { link, delivery_code: order.delivery_code } });
     }
-    if (to === 'delivered') {
+    if (to === 'delivered' && siblings.every((s) => s.stage === 'delivered')) {
       await q.query("update orders set status = 'delivered', delivered_at = $2 where id = $1", [order.id, now.toISOString()]);
       await q.query('update deliveries set delivered_at = $2, last_lat = null, last_lng = null, last_accuracy_m = null, last_ping_at = null where order_id = $1', [order.id, now.toISOString()]);
       await queueMessage(q, { orderId: order.id, template: 'delivered', vars: { link } });
@@ -124,7 +133,7 @@ export async function flagFile(jobId: string, actor: Actor, issue: string): Prom
     await q.query('update jobs set clock_paused = true, paused_reason = $2, paused_at = now(), updated_at = now() where id = $1', [job.id, issue.trim()]);
     await q.query("insert into job_events (job_id, from_stage, to_stage, staff_id, note) values ($1,'file_check','file_check',$2,$3)", [job.id, actor.id, `Problem with the file: ${issue.trim()}`]);
     await q.query('update order_items set preview_approved_at = null where id = $1', [job.order_item_id]);
-    await queueMessage(q, { orderId: order.id, template: 'file_problem', vars: { issue: issue.trim().replace(/\.?$/, '.'), link: `${appUrl()}/order/${order.id}/artwork?fix=1` } });
+    await queueMessage(q, { orderId: order.id, template: 'file_problem', vars: { issue: issue.trim().replace(/\.?$/, '.'), link: `${appUrl()}/order/${order.id}/artwork?fix=1&item=${job.order_item_id}` } });
   });
   await flushMessages();
 }
@@ -191,7 +200,10 @@ export async function completeWithCode(jobId: string, code: string): Promise<voi
   if (!job) throw new JobError('We could not find that job.');
   const order = await one('select delivery_code from orders where id = $1', [job.order_id]);
   if (!order || String(order.delivery_code) !== String(code).trim()) throw new JobError('That code does not match. Ask the customer to read it again.');
-  await moveJob(jobId, 'delivered', { actor: null, viaCode: true });
+  // One code, one drop: every line that is out with the rider is handed over together.
+  const out = await query<{ id: string }>("select id from jobs where order_id = $1 and stage = 'out_for_delivery' order by created_at, id", [job.order_id]);
+  const ids = out.some((j) => j.id === jobId) ? out.map((j) => j.id) : [jobId];
+  for (const id of ids) await moveJob(id, 'delivered', { actor: null, viaCode: true });
 }
 
 export async function assignPress(jobId: string, actor: Actor, pressId: string) {
@@ -201,8 +213,8 @@ export async function assignPress(jobId: string, actor: Actor, pressId: string) 
 }
 
 /** The customer replaced a file after a problem was flagged. The job stays paused until the file desk passes it. */
-export async function noteReupload(orderId: string) {
-  const job = await one('select * from jobs where order_id = $1', [orderId]);
+export async function noteReupload(orderId: string, itemId?: string | null) {
+  const job = itemId ? await one('select * from jobs where order_item_id = $1', [itemId]) : await one('select * from jobs where order_id = $1 order by created_at limit 1', [orderId]);
   if (!job || job.stage !== 'file_check') return;
   await query("insert into job_events (job_id, from_stage, to_stage, note) values ($1,'file_check','file_check','Customer uploaded a new file')", [job.id]);
 }
@@ -220,7 +232,11 @@ export function statusOf(j: { stage: Stage; clock_paused: boolean; promised_at: 
 export async function listQueue(actor: Actor): Promise<Row[]> {
   const base = `select j.id, j.stage, j.clock_paused, j.paused_reason, j.at_risk, j.reprint_count, j.updated_at,
             o.id as order_id, o.code, o.speed, o.promised_at, o.pickup, o.public_token, o.area, o.delivery_window,
-            coalesce(i.label, p.name) as product_name, i.quantity, i.config, i.artwork_path, i.size_key, i.width_ft, i.height_ft, pr.name as press_name
+            coalesce(i.label, p.name) as product_name, i.id as item_id, i.quantity, i.config, i.artwork_path, i.size_key, i.width_ft, i.height_ft, pr.name as press_name,
+            i.artwork_file_id, i.preview_approved_at,
+            (select count(*)::int from order_items x where x.order_id = o.id) as line_count,
+            (select count(*)::int from order_items x where x.order_id = o.id and (x.position, x.id::text) <= (i.position, i.id::text)) as line_no,
+            (select pf.status from proofs pf where pf.order_item_id = i.id order by pf.version desc limit 1) as proof_status
      from jobs j join orders o on o.id = j.order_id join order_items i on i.id = j.order_item_id
      join products p on p.id = i.product_id left join presses pr on pr.id = j.press_id
      where j.stage <> 'delivered'`;

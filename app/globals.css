@@ -30,6 +30,7 @@
   .pill { @apply inline-flex items-center rounded-full px-3 py-1 text-[13px] font-bold leading-tight whitespace-nowrap; }
   .choice { @apply min-h-[48px] px-4 rounded-sm2 border-2 border-line-control bg-surface font-bold text-ink inline-flex items-center justify-center cursor-pointer select-none hover:border-ink transition-colors duration-100; }
   .choice[aria-pressed='true'], .choice[data-on='true'] { @apply bg-ink text-white border-ink; }
+  .choice[aria-disabled='true'] { @apply cursor-not-allowed border-dashed bg-paper2 text-muted hover:border-line-control; }
   .link { @apply font-bold underline decoration-2 underline-offset-4 decoration-accent hover:decoration-ink; }
 }
 

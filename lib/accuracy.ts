@@ -20,9 +20,13 @@ export type CheckInput = {
   cls: CheckClass;
   thresholds: Thresholds;
   maxBytes: number;
+  /** Cut-and-trim products: a file the size of the finished piece can be given a small extra edge. */
+  bleedOffer?: boolean;
+  /** The file already has this much extra edge on every side, added by us. */
+  bleedIn?: number;
 };
 
-export type CheckLine = { id: string; status: Status; label: string; message: string };
+export type CheckLine = { id: string; status: Status; label: string; message: string; /** Something we can do for the customer from this line. */ action?: 'add_bleed' };
 export type CheckResult = {
   status: Status;
   dpi: number | null;
@@ -31,6 +35,9 @@ export type CheckResult = {
 };
 
 export const ALLOWED_MIME = ['image/jpeg', 'image/png', 'application/pdf'];
+
+/** The extra edge printers need so no white line shows where a sheet is cut: 3 mm. */
+export const BLEED_IN = 0.125;
 const SHAPE_TOLERANCE = 0.02;
 
 const worst = (a: Status, b: Status): Status => (a === 'stop' || b === 'stop' ? 'stop' : a === 'warn' || b === 'warn' ? 'warn' : 'pass');
@@ -86,7 +93,10 @@ export function checkArtwork(i: CheckInput): CheckResult {
     }
     add({ id: 'pdf', status: 'pass', label: 'Quality', message: 'PDF received. A person checks fonts and image quality before anything prints.' });
   } else if (facts.widthPx && facts.heightPx) {
-    dpi = Math.round(effectiveDpi(facts.widthPx, facts.heightPx, pw, ph));
+    // A file that already carries our extra edge is measured against the finished size plus that edge.
+    const bw = pw + 2 * (i.bleedIn ?? 0);
+    const bh = ph + 2 * (i.bleedIn ?? 0);
+    dpi = Math.round(effectiveDpi(facts.widthPx, facts.heightPx, bw, bh));
     if (dpi >= t.pass) {
       add({ id: 'resolution', status: 'pass', label: 'Sharpness', message: `Your file looks sharp at this size (${dpi} dots per inch).` });
     } else if (dpi >= t.warn) {
@@ -94,12 +104,18 @@ export function checkArtwork(i: CheckInput): CheckResult {
     } else {
       add({ id: 'resolution', status: 'stop', label: 'Sharpness', message: `This will print blurry at this size (${dpi} dots per inch). Upload a larger file, or let us fix it for you.` });
     }
-    const diff = aspectDifference(facts.widthPx, facts.heightPx, pw, ph);
+    const diff = aspectDifference(facts.widthPx, facts.heightPx, bw, bh);
     add(
       diff <= SHAPE_TOLERANCE
         ? { id: 'shape', status: 'pass', label: 'Shape', message: 'Your picture is the right shape for the print area.' }
         : { id: 'shape', status: 'warn', label: 'Shape', message: 'Your picture is a different shape from the print area, so the edges will be trimmed. Check the preview to see what stays.' },
     );
+    if (i.bleedIn) {
+      add({ id: 'bleed', status: 'pass', label: 'Extra edge', message: 'We added a 3 mm extra edge to your design, so no white line shows after cutting.' });
+    } else if (i.bleedOffer && diff <= SHAPE_TOLERANCE && dpi >= t.warn) {
+      // The picture is exactly the finished size, which means nothing reaches past the cut. Say so, and offer to fix it.
+      add({ id: 'bleed', status: 'pass', label: 'Extra edge', message: 'Your design is exactly the finished size, so a thin white line can show at the edge after cutting. We can add a 3 mm extra edge for you, free.', action: 'add_bleed' });
+    }
   } else {
     add({ id: 'read', status: 'stop', label: 'Reading the file', message: 'We could not read this file. Try saving it again as a JPG, PNG or PDF.' });
     return stopNow();

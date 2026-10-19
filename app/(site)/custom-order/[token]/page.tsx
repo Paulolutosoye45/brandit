@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { revalidatePath } from 'next/cache';
 import { one } from '@/lib/db';
+import { getBusiness } from '@/lib/business';
 import { acceptQuote, cancelByCustomer, effectiveStatus, getByToken, requestFiles } from '@/lib/custom';
 import { naira } from '@/lib/money';
 import { Notice } from '@/components/Bits';
@@ -44,7 +45,7 @@ export default async function CustomStatus(props: { params: Promise<{ token: str
   const status = effectiveStatus(r);
   const files = await requestFiles(r.id);
   const order = r.order_id ? await one<{ id: string; status: string; public_token: string }>('select id, status, public_token from orders where id = $1', [r.order_id]) : null;
-  const wa = process.env.NEXT_PUBLIC_WHATSAPP;
+  const wa = (await getBusiness()).whatsapp;
   const waHref = wa ? `https://wa.me/${wa}?text=${encodeURIComponent(`Hi Brandit, about my custom request ${r.code}`)}` : null;
   const wating = status === 'new' || status === 'quoted';
   const plan = planOf(r);

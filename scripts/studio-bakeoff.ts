@@ -34,7 +34,7 @@ type ProductKey = 'flyer' | 'poster' | 'tee' | 'frame' | 'banner' | 'rollup' | '
 const PRODUCTS: Record<ProductKey, { slug: string; name: string; w: number; h: number; dpi: number }> = {
   flyer: { slug: 'flyers', name: 'Flyer', w: 5.83, h: 8.27, dpi: 300 },
   poster: { slug: 'posters', name: 'Poster', w: 11.69, h: 16.54, dpi: 300 },
-  tee: { slug: 'branded-t-shirts', name: 'T-shirt', w: 11, h: 14, dpi: 200 },
+  tee: { slug: 'tees-and-totes', name: 'T-shirt', w: 11, h: 14, dpi: 200 },
   frame: { slug: 'picture-frames', name: 'Picture frame', w: 8, h: 10, dpi: 200 },
   banner: { slug: 'flex-banners', name: 'Flex banner', w: 72, h: 36, dpi: 100 },
   rollup: { slug: 'roll-up-banners', name: 'Roll-up banner', w: 33.5, h: 78.7, dpi: 100 },

@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource-variable/dm-sans/wght.css';
 import './globals.css';
+import { isStaging } from '@/lib/envcheck';
 
 const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
@@ -21,7 +22,10 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1, them
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-NG">
-      <body>{children}</body>
+      <body>
+        {isStaging(process.env) && <div role="status" className="bg-accent px-3 py-1 text-center text-[13px] font-bold text-ink">Test site: nothing here is real. Payments are test payments and orders are not made.</div>}
+        {children}
+      </body>
     </html>
   );
 }

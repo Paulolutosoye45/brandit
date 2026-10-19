@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { one } from '@/lib/db';
+import { one, query } from '@/lib/db';
 import { naira } from '@/lib/money';
 import { describeWhen } from '@/lib/time';
 import { getSettings } from '@/lib/settings';
@@ -12,19 +12,20 @@ export const metadata = { title: 'Receipt' };
 export default async function Invoice(props: { params: Promise<{ token: string }> }) {
   const params = await props.params;
   const o = await one<any>(
-    `select o.*, i.quantity, i.width_ft, i.height_ft, i.size_key, coalesce(i.label, p.name) as product_name, p.sizes, c.name as cname, coalesce(c.whatsapp_phone, c.phone) as phone, c.email, b.name as company, b.tax_id
-     from orders o join order_items i on i.order_id = o.id join products p on p.id = i.product_id
-     left join customers c on c.id = o.customer_id left join businesses b on b.id = o.business_id where o.public_token = $1`,
+    `select o.*, c.name as cname, coalesce(c.whatsapp_phone, c.phone) as phone, c.email, b.name as company, b.tax_id
+     from orders o left join customers c on c.id = o.customer_id left join businesses b on b.id = o.business_id where o.public_token = $1`,
     [params.token],
   );
   if (!o) notFound();
+  const lines = await query<any>(
+    `select i.quantity, i.width_ft, i.height_ft, i.size_key, i.line_total_kobo, coalesce(i.label, p.name) as product_name, p.sizes
+     from order_items i join products p on p.id = i.product_id where i.order_id = $1 order by i.position, i.id`, [o.id]);
   const s = await getSettings();
   const paid = !!o.paid_at;
   const title = paid ? (o.company ? 'VAT invoice' : 'Receipt') : 'Pro-forma invoice';
   const rate = s.vat_rate;
   const base = o.subtotal_kobo + o.delivery_fee_kobo + o.design_fee_kobo;
   const net = o.total_kobo - o.vat_kobo;
-  const size = (o.sizes as any[]).find((x) => x.key === o.size_key);
   return (
     <div className="mx-auto max-w-[760px] px-5 py-8 grid gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -38,7 +39,12 @@ export default async function Invoice(props: { params: Promise<{ token: string }
       <table className="w-full text-[15px] tabular">
         <thead><tr className="text-left border-b-2 border-ink"><th className="py-2">Item</th><th className="py-2 text-right">Amount</th></tr></thead>
         <tbody>
-          <tr className="border-b border-line"><td className="py-2">{o.custom_request_id ? '' : `${o.quantity.toLocaleString('en-US')} × `}{o.product_name}{o.width_ft ? ` (${o.width_ft} × ${o.height_ft} ft)` : size && (o.sizes as any[]).length > 1 ? ` (${size.label})` : ''}</td><td className="py-2 text-right">{naira(o.subtotal_kobo)}</td></tr>
+          {lines.map((l, n) => {
+            const size = (l.sizes as any[]).find((x) => x.key === l.size_key);
+            return (
+              <tr key={n} className="border-b border-line"><td className="py-2">{o.custom_request_id ? '' : `${l.quantity.toLocaleString('en-US')} × `}{l.product_name}{l.width_ft ? ` (${l.width_ft} × ${l.height_ft} ft)` : size && (l.sizes as any[]).length > 1 ? ` (${size.label})` : ''}</td><td className="py-2 text-right">{naira(lines.length === 1 ? o.subtotal_kobo : l.line_total_kobo)}</td></tr>
+            );
+          })}
           {o.design_fee_kobo > 0 && <tr className="border-b border-line"><td className="py-2">Design fee</td><td className="py-2 text-right">{naira(o.design_fee_kobo)}</td></tr>}
           <tr className="border-b border-line"><td className="py-2">{o.pickup ? 'Pickup' : 'Delivery'}</td><td className="py-2 text-right">{o.pickup ? 'Free' : naira(o.delivery_fee_kobo)}</td></tr>
           {o.discount_kobo > 0 && <tr className="border-b border-line"><td className="py-2">Coupon {o.coupon_code}</td><td className="py-2 text-right">−{naira(o.discount_kobo)}</td></tr>}

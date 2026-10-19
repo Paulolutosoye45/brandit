@@ -2,36 +2,47 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useT } from './LangProvider';
+import { useOrderSheet } from './builder/OrderSheet';
+import { useBasketCount } from './builder/basketBus';
 
-const items = [
-  { href: '/', label: 'Home', d: 'M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z' },
-  { href: '/products', label: 'Products', d: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z' },
-  { href: '/track', label: 'Track', d: 'M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11zM12 12a2.5 2.5 0 100-5 2.5 2.5 0 000 5z' },
-  { href: '/account', label: 'Account', d: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c0-4 4-6 8-6s8 2 8 6' },
-];
+const HOME = 'M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z';
+const ORDER = 'M12 5v14M5 12h14';
+const BAG = 'M6 8h12l1 12H5L6 8zM9 8V7a3 3 0 016 0v1';
+const ACCOUNT = 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c0-4 4-6 8-6s8 2 8 6';
 
-export function BottomNav({ signedIn = false }: { signedIn?: boolean }) {
+const cell = (on: boolean) => `flex min-h-[60px] w-full flex-col items-center justify-center gap-0.5 text-[12px] font-bold ${on ? 'text-ink' : 'text-muted'}`;
+const pill = (on: boolean) => `relative inline-flex h-7 w-12 items-center justify-center rounded-full ${on ? 'bg-accent' : ''}`;
+const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
+
+/** The phone's bottom bar: Home, Order, Basket, Account. Order opens the Order Builder in a panel. */
+export function BottomNav({ signedIn = false, basketCount = 0 }: { signedIn?: boolean; basketCount?: number }) {
   const path = usePathname();
   const t = useT();
+  const { open, isOpen } = useOrderSheet();
+  const n = useBasketCount(basketCount);
   // At checkout the Pay bar takes the bottom of the screen.
   if (path.startsWith('/checkout')) return null;
+  const account = signedIn ? { href: '/account', label: 'Account' } : { href: '/signin', label: 'Sign in' };
   return (
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-surface/95 backdrop-blur border-t border-line pb-[env(safe-area-inset-bottom)]">
       <ul className="grid grid-cols-4">
-        {items.map((raw) => {
-          const it = raw.href === '/account' && !signedIn ? { ...raw, label: 'Sign in', href: '/signin' } : raw;
-          const on = it.href === '/' ? path === '/' : path.startsWith(it.href) || (raw.href === '/account' && path.startsWith('/account'));
-          return (
-            <li key={it.href}>
-              <Link href={it.href} aria-current={on ? 'page' : undefined} className={`flex flex-col items-center justify-center gap-0.5 min-h-[60px] text-[12px] font-bold ${on ? 'text-ink' : 'text-muted'}`}>
-                <span className={`h-7 w-12 rounded-full inline-flex items-center justify-center ${on ? 'bg-accent' : ''}`}>
-                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={it.d} /></svg>
-                </span>
-                {t(it.label)}
-              </Link>
-            </li>
-          );
-        })}
+        <li><Link href="/" aria-current={path === '/' ? 'page' : undefined} className={cell(path === '/' && !isOpen)}><span className={pill(path === '/' && !isOpen)}><Icon d={HOME} /></span>{t('Home')}</Link></li>
+        <li>
+          <button type="button" aria-haspopup="dialog" onClick={() => open(null, { from: 'panel' })} className={cell(isOpen)}>
+            <span className="inline-flex h-7 w-12 items-center justify-center rounded-full bg-ink text-white"><Icon d={ORDER} /></span>
+            {t('Order')}
+          </button>
+        </li>
+        <li>
+          <Link href="/basket" aria-current={path.startsWith('/basket') ? 'page' : undefined} aria-label={n > 0 ? `${t('Basket')}, ${n}` : t('Basket')} className={cell(path.startsWith('/basket'))}>
+            <span className={pill(path.startsWith('/basket'))}>
+              <Icon d={BAG} />
+              {n > 0 && <span className="absolute -right-0.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-ink px-1 text-[11px] font-bold text-white">{n}</span>}
+            </span>
+            {t('Basket')}
+          </Link>
+        </li>
+        <li><Link href={account.href} aria-current={path.startsWith('/account') ? 'page' : undefined} className={cell(path.startsWith('/account'))}><span className={pill(path.startsWith('/account'))}><Icon d={ACCOUNT} /></span>{t(account.label)}</Link></li>
       </ul>
     </nav>
   );

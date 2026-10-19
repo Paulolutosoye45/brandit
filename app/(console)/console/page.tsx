@@ -1,2 +1,2 @@
 import { redirect } from 'next/navigation';
-export default function ConsoleIndex() { redirect('/console/queue'); }
+export default function ConsoleIndex() { redirect('/console/today'); }

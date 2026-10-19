@@ -27,6 +27,8 @@ services:
         value: 0.0.0.0     # The standalone server must listen on every address, not just the machine's own name.
       - key: DEMO_MODE
         value: "false"
+      - key: LAUNCH_PRICES
+        value: "yes"        # Loads the launch price book once, on the first start, so there is something to buy. It never loads itself again (console, Setup, Launch price book).
       - key: DATABASE_URL
         fromDatabase:
           name: brandit-db
@@ -71,10 +73,11 @@ databases:
     plan: 0.5c-1g          # 0.5 CPU, 1 GB RAM
     diskSizeGB: 5          # Orders are small. This can be increased later, never reduced.
     postgresMajorVersion: "17"
-    # Open to the internet, because the site runs on Vercel, which connects from changing addresses.
-    # Every connection still needs the password, and Render insists on SSL from outside.
-    # Render applies this list each time the Blueprint syncs, so a change made only in the dashboard is undone.
-    # If the site moves to Render (Path A), set it to [] so only services inside Render can connect.
-    ipAllowList:
-      - source: 0.0.0.0/0
-        description: Vercel (changing addresses)
+    # Private: only services inside Render (the web service above) can connect, over the private network.
+    # This is the safe setting for a live shop. Render applies this list each time the Blueprint syncs, so a change
+    # made only in the dashboard is undone.
+    # To look at your data from your own computer, add your public IP address in the database's Networking section,
+    # use the External connection string, and remove the address afterwards (DEPLOY.md, "Looking at your data").
+    # If you host the site on Vercel instead (Path D), this must be opened to 0.0.0.0/0, because Vercel connects
+    # from changing addresses.
+    ipAllowList: []

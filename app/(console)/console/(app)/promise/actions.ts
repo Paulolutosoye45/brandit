@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import { resolveClaim, type Resolution } from '@/lib/claims';
+import { trail, trailProduct } from '@/lib/trail';
 
 export async function decide(fd: FormData) {
   const staff = await requireStaff('claims');
@@ -15,6 +16,7 @@ export async function decide(fd: FormData) {
   } catch (e) {
     err = (e as Error).message;
   }
+  if (!err) await trail({ area: 'order', action: `claim_${resolution}`, target: String(fd.get('id')), summary: `Decided a problem report: ${resolution === 'rejected' ? 'no reprint or refund' : resolution}${resolution === 'refund' && amount ? ` of ₦${Number(amount).toLocaleString('en-NG')}` : ''}` });
   revalidatePath('/console/promise');
   redirect(`/console/promise?${err ? `e=${encodeURIComponent(err)}` : 'ok=Decision recorded and the customer has been told.'}`);
 }

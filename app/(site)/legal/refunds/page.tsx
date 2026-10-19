@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { OwnPage } from '@/components/OwnPage';
+import { pageOverride } from '@/lib/contentPages';
 import { LegalPage, LSection, type TocItem } from '@/components/LegalPage';
 import { getSettings } from '@/lib/settings';
-import { SITE, contact } from '@/lib/site';
+import { getContact } from '@/lib/business';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Reprints and Refunds', description: 'What Brandit does when a print is wrong, damaged or late, how to report it, and how refunds work.' };
@@ -19,8 +21,10 @@ const TOC: TocItem[] = [
 ];
 
 export default async function Refunds() {
+  const mine = await pageOverride('refunds');
+  if (mine) return <OwnPage title={mine.title} updatedAt={mine.updated_at} body={mine.body} />;
   const s = await getSettings();
-  const c = contact();
+  const c = await getContact();
   let n = 0;
   const sec = (id: string) => ({ id, n: ++n, title: TOC.find((x) => x.id === id)!.title });
   return (
@@ -43,7 +47,7 @@ export default async function Refunds() {
         <ul>
           <li>Report it within <strong>{s.claim_window_hours} hours of delivery</strong>. After that, we may still help, but the Promise no longer applies automatically.</li>
           <li>Open your order (from your account or the link in your messages) and choose <strong>Report a problem</strong>. Tell us what is wrong and add a photo if you can. A photo in daylight is best.</li>
-          <li>Prefer to talk? {c.whatsapp ? <>Message us on <a href={c.whatsappLink(`Hi Brandit, I have a problem with my order.`)!}>WhatsApp</a>.</> : <>Use our <Link href="/contact">contact page</Link>.</>} We are available {SITE.hours} and reply within {SITE.replyWithin}.</li>
+          <li>Prefer to talk? {c.whatsapp ? <>Message us on <a href={c.whatsappLink(`Hi Brandit, I have a problem with my order.`)!}>WhatsApp</a>.</> : <>Use our <Link href="/contact">contact page</Link>.</>} We are available {c.hours} and reply within {c.replyWithin}.</li>
           <li>Please keep the wrong or damaged items until we decide. We may ask you to show them to our rider or send a photo.</li>
         </ul>
       </LSection>

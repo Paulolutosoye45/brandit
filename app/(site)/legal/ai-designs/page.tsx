@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { OwnPage } from '@/components/OwnPage';
+import { pageOverride } from '@/lib/contentPages';
 import { LegalPage, LSection, type TocItem } from '@/components/LegalPage';
 import { getSettings } from '@/lib/settings';
 import { naira, priceOf, allowanceFor } from '@/lib/studio/config';
 import { POLICY_SUMMARY } from '@/content/studio-policy';
-import { contact } from '@/lib/site';
+import { getContact } from '@/lib/business';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'AI designs (Brandit Studio)', description: 'How Brandit Studio makes designs, what is sent to the picture-making companies, what we will not make, what you pay, and how long we keep your things.' };
@@ -21,8 +23,10 @@ const TOC: TocItem[] = [
 ];
 
 export default async function AiDesigns() {
+  const mine = await pageOverride('ai-designs');
+  if (mine) return <OwnPage title={mine.title} updatedAt={mine.updated_at} body={mine.body} />;
   const s = await getSettings();
-  const c = contact();
+  const c = await getContact();
   const std = allowanceFor('standard', s), prem = allowanceFor('premium', s);
   let n = 0;
   const sec = (id: string) => ({ id, n: ++n, title: TOC.find((x) => x.id === id)!.title });

@@ -43,6 +43,7 @@ export async function decideReview(staffId: string, reviewId: string, decision: 
   if (decision === 'passed') {
     await resumeCredit(r.project_id);
     await ensureCredit(r.project_id);
+    await (await import('./inOrder')).attachApproved(r.project_id).catch((e) => console.error('[brandit] could not put the design on the order:', e?.message ?? e));
     await notifyChecked(r.project_id).catch(() => {});
   } else {
     await pauseCredit(r.project_id);

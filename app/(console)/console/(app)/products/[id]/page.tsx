@@ -8,16 +8,15 @@ import { listImages } from '@/lib/productImages';
 import { imageUrl } from '@/lib/catalog';
 import { Notice } from '@/components/Bits';
 import {
-  saveDetailsAction, saveOptionsAction, saveSizesAction, saveTiersAction, saveAreaAction, save24hAction,
+  saveDetailsAction, save24hAction,
   setActiveAction, deleteImageAction, coverImageAction, altImageAction, deleteProductAction,
 } from '../actions';
-import { OptionsEditor, SizesEditor, TiersEditor, ImageUploader } from './editors';
+import { ImageUploader } from './editors';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Edit product' };
 
 const MODE_TEXT = { tier: 'Priced by quantity', size: 'Priced by size', area: 'Priced by the square foot' } as const;
-const k2n = (k: number | null | undefined) => (k == null ? '' : String(k / 100));
 
 export default async function EditProduct(props: { params: Promise<{ id: string }>; searchParams: Promise<{ e?: string; ok?: string }> }) {
   const { id } = await props.params;
@@ -34,10 +33,12 @@ export default async function EditProduct(props: { params: Promise<{ id: string 
     query<{ category: string }>("select distinct category from products where category <> '' and not system order by category"),
     one<{ n: number }>('select (select count(*) from order_items where product_id = $1)::int as n', [id]),
   ]);
-  const area = rules.find((r) => r.rate_per_sqft_kobo != null);
-  const sizeRows = p.sizes.map((s) => ({ key: s.key, label: s.label, w: String(s.w_in), h: String(s.h_in), price: k2n(rules.find((r) => r.size_key === s.key)?.price_kobo) }));
-  const tierRows = rules.filter((r) => r.quantity != null).map((r) => ({ quantity: String(r.quantity), price: k2n(r.price_kobo) }));
-  const hasPlaceholder = (await one<{ n: number }>('select count(*)::int as n from price_rules where product_id = $1 and provisional', [id]))!.n > 0;
+  const priced = rules.filter((r) => r.price_kobo != null || r.rate_per_sqft_kobo != null);
+  const placeholderRules = (await one<{ n: number }>('select count(*)::int as n from price_rules where product_id = $1 and provisional', [id]))!.n;
+  const placeholders = placeholderRules + p.options.reduce((n, o) => n + o.choices.filter((c) => c.provisional).length, 0);
+  const waiting = p.options.reduce((n, o) => n + o.choices.filter((c) => c.unpriced).length, 0);
+  const choiceCount = p.options.reduce((n, o) => n + o.choices.length, 0);
+  const lowest = priced.length ? Math.min(...priced.map((r) => r.price_kobo ?? r.rate_per_sqft_kobo)) : null;
 
   return (
     <div className="grid gap-6 max-w-[900px]">
@@ -57,7 +58,7 @@ export default async function EditProduct(props: { params: Promise<{ id: string 
         <h2 id="ready-h" className="text-[22px]">{p.active ? 'This product is on sale' : ready.ready ? 'Ready to go on sale' : 'Not ready yet'}</h2>
         {ready.missing.length > 0 && <div><p className="font-bold">Needed before it can go on sale</p><ul className="list-disc pl-5 text-[15px]">{ready.missing.map((m) => <li key={m}>{m}</li>)}</ul></div>}
         {ready.tips.length > 0 && <div><p className="font-bold">Worth doing</p><ul className="list-disc pl-5 text-[15px] text-muted">{ready.tips.map((m) => <li key={m}>{m}</li>)}</ul></div>}
-        {hasPlaceholder && <Notice tone="warn">Some prices on this product are still placeholders. Save the prices below once you have checked them.</Notice>}
+        {placeholders > 0 && <Notice tone="warn">{placeholders} price{placeholders === 1 ? ' is' : 's are'} still a placeholder (an example, not a real price). Check them in the <Link className="underline" href={`/console/products/${id}/prices`}>price grid</Link>.</Notice>}
         <form action={setActiveAction} className="flex flex-wrap gap-3">
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="on" value={p.active ? '0' : '1'} />
@@ -94,6 +95,7 @@ export default async function EditProduct(props: { params: Promise<{ id: string 
 
       <section id="details" className="card p-5 grid gap-4 scroll-mt-6">
         <h2 className="text-[22px]">Name and description</h2>
+        {p.sample && <p className="rounded-md2 bg-paper2 px-4 py-3 text-[15px]"><b>This is the sample pack.</b> It needs no artwork. Set its price under Prices, put what goes in the box in the description, then switch it on. What a customer pays comes back to them as a single-use coupon when the box leaves for delivery (set how long it lasts under Growth).</p>}
         <form action={saveDetailsAction} className="grid gap-4">
           <input type="hidden" name="id" value={id} />
           <div className="grid gap-4 sm:grid-cols-2">
@@ -124,30 +126,37 @@ export default async function EditProduct(props: { params: Promise<{ id: string 
             )}
           </div>
           <label className="flex items-center gap-3 min-h-[44px]"><input type="checkbox" name="allow_custom" defaultChecked={p.allow_custom} className="h-5 w-5 accent-[#0B1F33]" /><span><span className="font-bold">Show &ldquo;Need it different?&rdquo;</span> Customers can ask for a custom quote on this product.</span></label>
+          <label className="flex items-center gap-3 min-h-[44px]"><input type="checkbox" name="personalise" defaultChecked={p.personalise} className="h-5 w-5 accent-[#0B1F33]" /><span><span className="font-bold">Takes a list of names</span> Customers can paste or upload a list, and each piece is printed with its own name (ID cards, name tees). The quantity follows the list.</span></label>
           <button className="btn-primary btn-sm self-start">Save details</button>
         </form>
       </section>
 
       <section id="prices" className="card p-5 grid gap-4 scroll-mt-6">
-        <div><h2 className="text-[22px]">{p.pricing_mode === 'tier' ? 'Quantities and prices' : p.pricing_mode === 'size' ? 'Sizes and prices' : 'Price per square foot'}</h2></div>
-        {p.pricing_mode === 'tier' && <TiersEditor id={id} initial={tierRows} action={saveTiersAction} />}
-        {p.pricing_mode === 'size' && <SizesEditor id={id} initial={sizeRows} action={saveSizesAction} />}
-        {p.pricing_mode === 'area' && (
-          <form action={saveAreaAction} className="grid gap-3 sm:max-w-[520px]">
-            <input type="hidden" name="id" value={id} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div><label className="label" htmlFor="a-rate">Rate per square foot (₦)</label><input id="a-rate" name="rate" inputMode="numeric" className="field" defaultValue={k2n(area?.rate_per_sqft_kobo)} placeholder="1500" /></div>
-              <div><label className="label" htmlFor="a-min">Smallest area charged (sq ft)</label><input id="a-min" name="min_area" inputMode="decimal" className="field" defaultValue={area?.min_area_sqft ?? ''} placeholder="6" /></div>
-            </div>
-            <button className="btn-primary btn-sm self-start">Save price</button>
-          </form>
-        )}
-        <p className="text-[13px] text-muted">Prices are what a customer pays before VAT settings, delivery and any coupon. {used?.n ? `This product has ${used.n} order${used.n === 1 ? '' : 's'}; changing a price never changes an order that is already placed.` : ''}</p>
+        <div>
+          <h2 className="text-[22px]">Prices</h2>
+          <p className="text-muted text-[15px]">
+            {p.pricing_mode === 'tier' ? 'A grid like a spreadsheet: quantities across, choices that change the price down.' : p.pricing_mode === 'size' ? 'A grid like a spreadsheet: one price for each size.' : 'A rate per square foot, with a smallest area charged.'}{' '}
+            {priced.length > 0 ? <>{priced.length} price{priced.length === 1 ? '' : 's'} set{lowest != null ? <>, from <b>₦{(lowest / 100).toLocaleString('en-US')}</b></> : null}.</> : 'No prices set yet.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Link className="btn-primary btn-sm" href={`/console/products/${id}/prices`}>Open the price grid</Link>
+          <Link className="btn-secondary btn-sm" href={`/products/${p.slug}?preview=1`} target="_blank">Preview as a customer</Link>
+          <Link className="btn-ghost btn-sm" href={`/console/products/${id}/test`}>Run the price test</Link>
+        </div>
+        <p className="text-[13px] text-muted">Changes show on the website the moment you save. {used?.n ? `This product has ${used.n} order${used.n === 1 ? '' : 's'}; changing a price never changes an order that is already placed.` : ''}</p>
       </section>
 
       <section id="options" className="card p-5 grid gap-4 scroll-mt-6">
-        <div><h2 className="text-[22px]">Options customers choose</h2><p className="text-muted text-[15px]">Finish, paper, sides, corners and so on. Each choice can add to the price.</p></div>
-        <OptionsEditor id={id} initial={p.options as any} mode={p.pricing_mode} action={saveOptionsAction} />
+        <div>
+          <h2 className="text-[22px]">Options, add-ons and packages</h2>
+          <p className="text-muted text-[15px]">
+            {p.options.length === 0 ? 'No options yet.' : <>{p.options.length} option{p.options.length === 1 ? '' : 's'} with {choiceCount} choice{choiceCount === 1 ? '' : 's'}.</>}{' '}
+            {(p.packages ?? []).length > 0 ? `${(p.packages ?? []).length} one-tap package${(p.packages ?? []).length === 1 ? '' : 's'}.` : ''}
+            {waiting > 0 ? <> <b>{waiting} add-on{waiting === 1 ? ' is' : 's are'} waiting for a price</b> and not shown to customers yet.</> : ''}
+          </p>
+        </div>
+        <div><Link className="btn-secondary btn-sm" href={`/console/products/${id}/options`}>Edit options and packages</Link></div>
       </section>
 
       <section id="delivery" className="card p-5 grid gap-4 scroll-mt-6">

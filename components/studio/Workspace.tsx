@@ -126,6 +126,16 @@ export function Workspace({ initial, quantities, adaptProducts, safePct, paid }:
     say('bad', r.error ?? 'We could not start the payment.');
   });
 
+  // A design started from a line in the basket is bought by adding it to that order: one payment for the design and the print.
+  const addToOrder = (tier: 'standard' | 'premium') => run(`add:${tier}`, async () => {
+    if (dirty && !(await saveBrief())) return;
+    if (!v.consent) return say('warn', 'Please tick the box under “Your pictures” first.');
+    const r = await act(v.id, { action: 'add_to_order', tier });
+    if (!r.ok) return say('bad', r.error!);
+    router.push(r.next ?? '/basket');
+  });
+  const takeOut = () => simple('remove', { action: 'remove_from_order' }, 'Taken out of your order.');
+
   const usePack = () => run('pack', async () => {
     if (dirty && !(await saveBrief())) return;
     if (!v.consent) return say('warn', 'Please tick the box under “Your pictures” first.');
@@ -221,6 +231,8 @@ export function Workspace({ initial, quantities, adaptProducts, safePct, paid }:
   const share_ = v.share;
   const reviewing = approved && v.approval.humanCheck && v.approval.review?.status === 'waiting';
   const ordered = v.order && v.order.status !== 'draft';
+  const inOrder = !!v.orderLine && v.orderLine.open && !v.tier;
+  const paidInOrder = !!v.orderLine && !v.orderLine.open;
 
   return (
     <div className="grid gap-6">
@@ -261,9 +273,13 @@ export function Workspace({ initial, quantities, adaptProducts, safePct, paid }:
       </details>
 
       {/* ---------- start: free sketches and unlocking ---------- */}
-      {!v.tier && (
+      {paidInOrder && !v.tier && <Toast tone="good">Your payment for order {v.orderLine!.code} is in. We are starting your designs now.</Toast>}
+      {!v.tier && !paidInOrder && (
         <section ref={startRef} id="start" className="card grid gap-5 p-5 sm:p-6" aria-labelledby="start-h">
-          <h2 id="start-h" className="text-[24px]">See it, then unlock it</h2>
+          <h2 id="start-h" className="text-[24px]">{inOrder ? 'See it, then add it to your order' : 'See it, then unlock it'}</h2>
+          {inOrder && v.orderLine!.tier && (
+            <Toast tone="good"><span className="flex flex-wrap items-center gap-3"><span>Your <strong className="capitalize">{v.orderLine!.tier}</strong> design is in your order ({v.orderLine!.fee} added to the price). Studio starts when you pay.</span><a className="btn-primary btn-sm" href="/basket">Go to my basket</a><button type="button" className="link text-[14px]" onClick={takeOut} disabled={!!busy}>Take it out</button></span></Toast>
+          )}
           {!v.phoneVerified ? (
             <PhoneVerify onDone={refresh} />
           ) : (
@@ -287,15 +303,25 @@ export function Workspace({ initial, quantities, adaptProducts, safePct, paid }:
               <div className="grid content-start gap-3 rounded-md2 border-2 border-line-control p-4">
                 <p className="font-display text-[22px] font-extrabold">Standard <span className="tabular">{v.prices.standard}</span></p>
                 <p className="text-[15px] text-muted">{v.usage.concepts.total} designs, 2 rounds of changes, a checked print file. {v.prices.creditStandard} off your print order.</p>
-                <button type="button" className="btn-primary" onClick={() => buy('standard')} disabled={!!busy || v.busy}>{busy === 'buy:standard' ? 'One moment…' : `Unlock Standard · ${v.prices.standard}`}</button>
-                {v.wallet.standardCredits > 0 && <button type="button" className="btn-secondary" onClick={usePack} disabled={!!busy}>Use 1 of my {v.wallet.standardCredits} pack designs</button>}
+                {inOrder ? (
+                  <button type="button" className="btn-primary" onClick={() => addToOrder('standard')} disabled={!!busy || v.busy}>{busy === 'add:standard' ? 'One moment…' : v.orderLine!.tier === 'standard' ? 'Standard is in your order' : `Add Standard to my order · ${v.fees.standard}`}</button>
+                ) : (
+                  <button type="button" className="btn-primary" onClick={() => buy('standard')} disabled={!!busy || v.busy}>{busy === 'buy:standard' ? 'One moment…' : `Unlock Standard · ${v.prices.standard}`}</button>
+                )}
+                {inOrder && <p className="text-[13px] text-muted">{v.prices.standard} for the design, less {v.prices.creditStandard} off your print, so {v.fees.standard} more on this order.</p>}
+                {!inOrder && v.wallet.standardCredits > 0 && <button type="button" className="btn-secondary" onClick={usePack} disabled={!!busy}>Use 1 of my {v.wallet.standardCredits} pack designs</button>}
               </div>
             )}
             {v.tiers.premium && (
               <div className="grid content-start gap-3 rounded-md2 border-2 border-ink p-4">
                 <p className="font-display text-[22px] font-extrabold">Premium <span className="tabular">{v.prices.premium}</span></p>
                 <p className="text-[15px] text-muted">Drafts, then finished designs. Vector file included, a Brandit designer checks it, and the same look on more products. {v.prices.creditPremium} off your print order.</p>
-                <button type="button" className="btn-primary" onClick={() => buy('premium')} disabled={!!busy || v.busy}>{busy === 'buy:premium' ? 'One moment…' : `Unlock Premium · ${v.prices.premium}`}</button>
+                {inOrder ? (
+                  <button type="button" className="btn-primary" onClick={() => addToOrder('premium')} disabled={!!busy || v.busy}>{busy === 'add:premium' ? 'One moment…' : v.orderLine!.tier === 'premium' ? 'Premium is in your order' : `Add Premium to my order · ${v.fees.premium}`}</button>
+                ) : (
+                  <button type="button" className="btn-primary" onClick={() => buy('premium')} disabled={!!busy || v.busy}>{busy === 'buy:premium' ? 'One moment…' : `Unlock Premium · ${v.prices.premium}`}</button>
+                )}
+                {inOrder && <p className="text-[13px] text-muted">{v.prices.premium} for the design, less {v.prices.creditPremium} off your print, so {v.fees.premium} more on this order.</p>}
               </div>
             )}
           </div>
@@ -523,7 +549,7 @@ export function Workspace({ initial, quantities, adaptProducts, safePct, paid }:
           {approved && v.approval.review?.status === 'changes' && <Toast tone="warn"><strong>A Brandit designer left a note:</strong> {v.approval.review.note || 'Please look at the design again.'}</Toast>}
           {v.approval.review?.status === 'passed' && <Toast tone="good">A Brandit designer checked your design and it is ready to print.</Toast>}
           {ordered ? (
-            <div className="flex flex-wrap items-center gap-3"><span className="font-bold">Ordered: {v.order!.code}</span><a className="btn-secondary btn-sm" href={`/checkout/${v.order!.id}`}>Open my order</a></div>
+            <div className="flex flex-wrap items-center gap-3"><span className="font-bold">Ordered: {v.order!.code}</span><a className="btn-secondary btn-sm" href={`/checkout/${v.order!.id}`}>Open my order</a>{paidInOrder && <span className="text-[14px] text-muted">Your design is on the order. It goes to our file desk to be checked, then it prints.</span>}</div>
           ) : v.approval.ready ? (
             <div className="grid gap-3">
               {v.credit.kobo > 0 && <p className="rounded-sm2 bg-good-tint p-3 text-[15px]"><strong>{naira(v.credit.kobo)} off</strong> your print order for this design{v.credit.endsAt ? `, until ${when(v.credit.endsAt)}` : ` for ${v.creditDays} days`}. It is applied automatically.</p>}

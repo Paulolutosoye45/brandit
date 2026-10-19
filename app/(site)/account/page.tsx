@@ -12,7 +12,8 @@ import { Avatar } from '@/components/Brand';
 import { GoogleIcon } from '@/components/GoogleIcon';
 import { signOut } from '@/app/(auth)/actions';
 import { requestsForCustomer } from '@/lib/custom';
-import { sameAgain, savePreferences } from './actions';
+import { sameAgain, savePreferences, setWeeklyReminder, stopWeeklyReminder } from './actions';
+import { WEEKDAYS, weeklyFor } from '@/lib/reminders';
 import { referralSummary } from '@/lib/referrals';
 import { InviteCard } from '@/components/InviteCard';
 import { getSettings } from '@/lib/settings';
@@ -33,16 +34,17 @@ const LABEL: Record<string, [string, string]> = {
   delivered: ['Delivered', 'bg-placeholder text-ink'], refunded: ['Refunded', 'bg-placeholder text-ink'], cancelled: ['Cancelled', 'bg-placeholder text-ink'],
 };
 
-export default async function Account(props: { searchParams: Promise<{ e?: string; saved?: string }> }) {
+export default async function Account(props: { searchParams: Promise<{ e?: string; saved?: string; reminder?: string }> }) {
   const searchParams = await props.searchParams;
   const c = await requireCustomer('/account');
-  const [orders, used, company, requests, invite, settings, kit] = await Promise.all([
+  const [orders, used, company, requests, invite, settings, kit, weekly] = await Promise.all([
     ordersForCustomer(c.id), methodsFor(c.id),
     c.business_id ? one<{ name: string }>('select name from businesses where id = $1', [c.business_id]) : Promise.resolve(null),
     requestsForCustomer(c.id),
     referralSummary(c.id),
     getSettings(),
     brandKitFor(c.id),
+    weeklyFor(c.id),
   ]);
   const ways = [
     c.google_sub && { icon: <GoogleIcon className="h-4 w-4" />, label: 'Google', detail: c.email },
@@ -67,10 +69,10 @@ export default async function Account(props: { searchParams: Promise<{ e?: strin
           {c.email && <div><dt className="font-bold text-muted">Receipts go to</dt><dd className="break-all">{c.email}</dd></div>}
           {c.default_area && <div><dt className="font-bold text-muted">Usual delivery area</dt><dd>{c.default_area}</dd></div>}
         </dl>
-        <div className="grid gap-2 border-t border-line pt-4">
+        <div className="grid min-w-0 gap-2 border-t border-line pt-4">
           <p className="text-[14px] font-bold text-muted">You can sign in with</p>
-          <ul className="grid gap-1.5 text-[15px]">
-            {ways.map((w) => <li key={w.label} className="flex items-center gap-2.5"><span className="grid h-5 w-5 place-items-center">{w.icon}</span><span className="font-bold">{w.label}</span><span className="min-w-0 truncate text-muted">{w.detail}</span></li>)}
+          <ul className="grid min-w-0 gap-1.5 text-[15px]">
+            {ways.map((w) => <li key={w.label} className="flex min-w-0 items-center gap-2.5"><span className="grid h-5 w-5 place-items-center">{w.icon}</span><span className="font-bold">{w.label}</span><span className="min-w-0 truncate text-muted">{w.detail}</span></li>)}
           </ul>
         </div>
         <div className="grid gap-2">
@@ -81,6 +83,7 @@ export default async function Account(props: { searchParams: Promise<{ e?: strin
           <summary className="cursor-pointer font-bold text-muted">Messages and language</summary>
           <form action={savePreferences} className="mt-3 grid gap-3">
             <label className="flex min-h-[44px] items-start gap-3"><input type="checkbox" name="nudge_ok" defaultChecked={c.nudge_ok} className="mt-0.5 h-5 w-5 accent-[#0B1F33]" /><span>Remind me once if I leave an order unpaid</span></label>
+            <label className="flex min-h-[44px] items-start gap-3"><input type="checkbox" name="reminders_ok" defaultChecked={c.reminders_ok} className="mt-0.5 h-5 w-5 accent-[#0B1F33]" /><span>Remind me to order again when I may be running low</span></label>
             {settings.pidgin_enabled && (
               <fieldset className="grid gap-1">
                 <legend className="font-bold text-muted">Wording of buttons and messages</legend>
@@ -107,13 +110,21 @@ export default async function Account(props: { searchParams: Promise<{ e?: strin
           <div className="flex flex-wrap gap-2"><Link href="/custom-order" className="btn-secondary btn-sm">Ask for a custom price</Link><Link href="/products" className="btn-primary btn-sm">Start a new order</Link></div>
         </div>
         {searchParams.e && <Notice tone="bad">{searchParams.e}</Notice>}
+        {searchParams.reminder === '1' && <Notice tone="good">Done. We will remind you every week.</Notice>}
+        {searchParams.reminder === '0' && <Notice tone="good">Reminder stopped.</Notice>}
+        {company && (
+          <Link href="/account/business" className="card flex items-center justify-between gap-3 p-4 hover:border-ink">
+            <span><span className="block text-[17px] font-bold">{company.name}</span><span className="text-[14px] text-muted">{c.business_role === 'member' ? 'Your company account. See your company orders.' : 'Your team, company orders and the monthly statement.'}</span></span>
+            <span aria-hidden className="text-[22px]">›</span>
+          </Link>
+        )}
         <Link href="/account/brand" className="card flex items-center justify-between gap-3 p-4 hover:border-ink">
           <span><span className="block text-[17px] font-bold">{kit ? 'Your brand kit' : 'Set up your brand kit'}</span><span className="text-[14px] text-muted">{kit ? 'Your logo, colours and approved designs, ready for every order.' : 'Save your logo and colours once. We use them every time you order.'}</span></span>
           <span aria-hidden className="text-[22px]">›</span>
         </Link>
         {settings.studio_enabled && runnable() && (
           <Link href={studioCount > 0 ? '/studio/projects' : '/studio'} className="card flex items-center justify-between gap-3 p-4 hover:border-ink">
-            <span><span className="block text-[17px] font-bold">{studioCount > 0 ? `Your Studio designs (${studioCount})` : 'Make a design with Brandit Studio'}</span><span className="text-[14px] text-muted">{studioCount > 0 ? 'Open a design, change a word, or print it again.' : 'Type your words, see free sketches, and get a print-ready design.'}</span></span>
+            <span><span className="block text-[17px] font-bold">{studioCount > 0 ? `My designs (${studioCount})` : 'Make a design with Brandit Studio'}</span><span className="text-[14px] text-muted">{studioCount > 0 ? 'Open a design, change a word, or print it again.' : 'Type your words, see free sketches, and get a print-ready design.'}</span></span>
             <span aria-hidden className="text-[22px]">›</span>
           </Link>
         )}
@@ -147,7 +158,7 @@ export default async function Account(props: { searchParams: Promise<{ e?: strin
             <article key={o.id} className="card grid gap-4 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[19px] font-bold">{o.custom_request_id ? o.product_name : `${o.quantity.toLocaleString('en-US')} × ${o.product_name}`}</p>
+                  <p className="text-[19px] font-bold">{o.custom_request_id || o.line_count > 1 ? o.product_name : `${o.quantity.toLocaleString('en-US')} × ${o.product_name}`}</p>
                   <p className="mt-0.5 text-[14px] text-muted"><span className="font-bold text-ink">{o.code}</span> ordered {describeWhen(new Date(o.created_at))}</p>
                 </div>
                 <div className="grid justify-items-end gap-1"><span className={`pill ${tone}`}>{label}</span><span className="font-display text-[20px] font-extrabold tabular">{naira(o.total_kobo)}</span></div>
@@ -159,6 +170,26 @@ export default async function Account(props: { searchParams: Promise<{ e?: strin
                   ? <Link href="/custom-order" className="btn-primary btn-sm">Ask for another price</Link>
                   : <form action={sameAgain}><input type="hidden" name="token" value={o.public_token} /><button className="btn-primary btn-sm">Same again</button></form>}
               </div>
+              {!o.custom_request_id && ['paid', 'in_production', 'delivered'].includes(o.status) && settings.reminders_enabled && c.reminders_ok && (() => {
+                const w = weekly.get(o.id);
+                return w ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-md2 bg-paper2 px-4 py-3 text-[15px]">
+                    <p><b>Weekly reminder:</b> every {WEEKDAYS[w.weekday - 1]} morning, to order this again.</p>
+                    <form action={stopWeeklyReminder}><input type="hidden" name="id" value={w.id} /><button className="link font-bold">Stop</button></form>
+                  </div>
+                ) : (
+                  <details className="text-[15px]">
+                    <summary className="cursor-pointer font-bold text-muted">Order this every week? Get a reminder</summary>
+                    <form action={setWeeklyReminder} className="mt-3 flex flex-wrap items-end gap-3">
+                      <input type="hidden" name="token" value={o.public_token} />
+                      <div><label className="label" htmlFor={`wd-${o.id}`}>Remind me on</label>
+                        <select id={`wd-${o.id}`} name="weekday" defaultValue="4" className="field">{WEEKDAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}</select></div>
+                      <button className="btn-secondary btn-sm">Remind me</button>
+                    </form>
+                    <p className="mt-2 text-[13px] text-muted">We message you at 8am on WhatsApp with one tap to order the same again. You can stop any time.</p>
+                  </details>
+                );
+              })()}
             </article>
           );
         })}

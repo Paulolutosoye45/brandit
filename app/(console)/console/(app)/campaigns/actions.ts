@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import * as C from '@/lib/campaigns';
+import { trail, trailProduct } from '@/lib/trail';
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? '');
 
@@ -28,6 +29,7 @@ export async function createCampaignAction(fd: FormData) {
     throw e;
   }
   refresh();
+  await trail({ area: 'marketing', action: 'campaign_created', target: c.title, summary: `Created seasonal page “${c.title}”` });
   redirect(`/console/campaigns/${c.id}?ok=${encodeURIComponent('Page created. It is hidden until you switch it on.')}`);
 }
 export async function saveCampaignAction(fd: FormData) {
@@ -38,6 +40,7 @@ export async function saveCampaignAction(fd: FormData) {
     throw e;
   }
   refresh(str(fd, 'slug'));
+  await trail({ area: 'marketing', action: 'campaign_saved', target: str(fd, 'title'), summary: `Saved seasonal page “${str(fd, 'title')}”` });
   redirect(`/console/campaigns/${id}?ok=${encodeURIComponent('Saved.')}`);
 }
 export async function setCampaignActiveAction(fd: FormData) {
@@ -45,6 +48,7 @@ export async function setCampaignActiveAction(fd: FormData) {
   const id = str(fd, 'id');
   const on = fd.get('on') === '1';
   await C.setCampaignActive(id, on);
+  await trail({ area: 'marketing', action: on ? 'campaign_on' : 'campaign_off', target: id, summary: on ? 'Switched a seasonal page on' : 'Switched a seasonal page off' });
   refresh();
   redirect(`${str(fd, 'back') === 'edit' ? `/console/campaigns/${id}` : '/console/campaigns'}?ok=${encodeURIComponent(on ? 'Switched on. It shows to customers on its dates.' : 'Switched off. Customers cannot see it.')}`);
 }
@@ -59,6 +63,7 @@ export async function deleteCampaignAction(fd: FormData) {
   const id = str(fd, 'id');
   if (str(fd, 'confirm').trim().toLowerCase() !== 'delete') redirect(`/console/campaigns/${id}?e=${encodeURIComponent('Type the word delete to confirm.')}`);
   await C.deleteCampaign(id);
+  await trail({ area: 'marketing', action: 'campaign_deleted', target: id, summary: 'Deleted a seasonal page' });
   refresh();
   redirect(`/console/campaigns?ok=${encodeURIComponent('Page deleted.')}`);
 }

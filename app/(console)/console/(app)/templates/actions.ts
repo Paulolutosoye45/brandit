@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import * as T from '@/lib/templates';
+import { trail, trailProduct } from '@/lib/trail';
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? '');
 
@@ -31,6 +32,7 @@ export async function createTemplateAction(fd: FormData) {
     throw e;
   }
   refresh();
+  await trail({ area: 'catalogue', action: 'template_created', target: id, summary: 'Created a template' });
   redirect(`/console/templates/${id}?ok=${encodeURIComponent('Template created. It is hidden until you add a preview and switch it on.')}`);
 }
 
@@ -44,6 +46,7 @@ export async function saveTemplateAction(fd: FormData) {
     throw e;
   }
   refresh(id);
+  await trail({ area: 'catalogue', action: 'template_saved', target: id, summary: 'Saved a template' });
   redirect(`/console/templates/${id}?ok=${encodeURIComponent('Saved. Customers see the change straight away.')}`);
 }
 
@@ -52,6 +55,7 @@ export async function setTemplateActiveAction(fd: FormData) {
   const id = str(fd, 'id');
   const on = fd.get('on') === '1';
   await T.setTemplateActive(id, on);
+  await trail({ area: 'catalogue', action: on ? 'template_on' : 'template_off', target: id, summary: on ? 'Put a template on sale' : 'Hid a template' });
   refresh(id);
   redirect(`${str(fd, 'back') === 'edit' ? `/console/templates/${id}` : '/console/templates'}?ok=${encodeURIComponent(on ? 'Template is live. Customers can use it now.' : 'Template is hidden.')}`);
 }
@@ -76,6 +80,7 @@ export async function deleteTemplateAction(fd: FormData) {
   const id = str(fd, 'id');
   if (str(fd, 'confirm').trim().toLowerCase() !== 'delete') redirect(`/console/templates/${id}?e=${encodeURIComponent('Type the word delete to confirm.')}`);
   await T.deleteTemplate(id);
+  await trail({ area: 'catalogue', action: 'template_deleted', target: id, summary: 'Deleted a template' });
   refresh();
   redirect(`/console/templates?ok=${encodeURIComponent('Template deleted. Orders already started from it are not affected.')}`);
 }

@@ -17,6 +17,6 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
   const b = await req.json().catch(() => null);
   const file = await assetBuffer(me.id, String(b?.assetId ?? ''));
   if (!file) return NextResponse.json({ ok: false, error: 'We could not find that file in your brand kit.' }, { status: 404 });
-  const r = await saveArtwork(id, file);
+  const r = await saveArtwork(id, file, typeof b?.itemId === 'string' && /^[0-9a-f-]{36}$/.test(b.itemId) ? b.itemId : null);
   return NextResponse.json(r, { status: r.ok ? 200 : 422 });
 }

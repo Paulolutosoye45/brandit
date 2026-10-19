@@ -60,8 +60,9 @@ export async function estimatePlan(items: { key: string; qty: number }[]): Promi
     }
     const quote = await makeQuote({ slug: def.slug, quantity: q, widthFt: def.widthFt, heightFt: def.heightFt });
     if (!quote.ok) { rows.push({ key: it.key, kobo: null, forQty: null }); complete = false; continue; }
-    rows.push({ key: it.key, kobo: quote.priceKobo + quote.extrasKobo, forQty: q });
-    total += quote.priceKobo + quote.extrasKobo;
+    // priceKobo already includes any add-ons.
+    rows.push({ key: it.key, kobo: quote.priceKobo, forQty: q });
+    total += quote.priceKobo;
   }
   return { rows, totalKobo: total, complete: complete && rows.length > 0 };
 }

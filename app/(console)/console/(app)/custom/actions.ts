@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import { declineRequest, quoteRequest } from '@/lib/custom';
+import { trail, trailProduct } from '@/lib/trail';
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? '');
 const back = (id: string, msg: { e?: string; ok?: string }): never => {
@@ -15,6 +16,7 @@ export async function quoteAction(fd: FormData) {
   const staff = await requireStaff('quote_custom');
   const id = str(fd, 'id');
   const r = await quoteRequest(id, staff.id, { price: str(fd, 'price'), days: str(fd, 'days'), validDays: str(fd, 'valid_days'), note: str(fd, 'note') });
+  if (r.ok) await trail({ area: 'order', action: 'quote_sent', target: id, summary: `Sent a price of ₦${str(fd, 'price')} for a custom request` });
   back(id, r.ok ? { ok: 'Price sent. The customer has a message with a link to accept it.' } : { e: r.error });
 }
 
@@ -22,5 +24,6 @@ export async function declineAction(fd: FormData) {
   await requireStaff('quote_custom');
   const id = str(fd, 'id');
   const r = await declineRequest(id, str(fd, 'reason'));
+  if (r.ok) await trail({ area: 'order', action: 'quote_declined', target: id, summary: 'Declined a custom request' });
   back(id, r.ok ? { ok: 'Declined. The customer has been told why.' } : { e: r.error });
 }

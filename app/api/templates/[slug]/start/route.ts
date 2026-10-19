@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { startFromTemplate } from '@/lib/templates';
 import { getCustomer } from '@/lib/session';
+import { adoptBasket, currentBasket } from '@/lib/basket';
 import { ipOf, limited } from '@/lib/ratelimit';
 
 export const dynamic = 'force-dynamic';
@@ -17,13 +18,17 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   const files = form.getAll('files').filter((f): f is File => typeof f !== 'string' && f.size > 0).slice(0, 3);
   for (const f of files) if (f.size > 10_000_000) return NextResponse.json({ ok: false, error: `“${f.name}” is larger than 10 MB. Send a smaller copy.` }, { status: 422 });
   const me = await getCustomer().catch(() => null);
+  const basket = await currentBasket().catch(() => null);
   const r = await startFromTemplate(slug, {
     answers,
     quantity: Number(form.get('quantity')) || undefined,
     colours: String(form.get('colours') ?? ''),
     files: await Promise.all(files.map(async (f) => ({ name: f.name || 'file', type: f.type, buf: Buffer.from(await f.arrayBuffer()) }))),
     customerId: me?.id ?? null,
+    basketOrderId: basket?.id ?? null,
   });
   if (!r.ok) return NextResponse.json(r, { status: 422 });
+  // The template order is now this phone's basket.
+  await adoptBasket(r.orderId).catch(() => {});
   return NextResponse.json({ ok: true, orderId: r.orderId });
 }

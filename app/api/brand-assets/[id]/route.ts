@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readAsset } from '@/lib/brandKit';
+import { kitOwnerId, readAsset } from '@/lib/brandKit';
 import { getCustomer, getStaff } from '@/lib/session';
 import { can } from '@/lib/permissions';
 
@@ -13,7 +13,8 @@ export async function GET(req: Request, props: { params: Promise<{ id: string }>
   const a = await readAsset(id, size);
   if (!a) return new NextResponse('Not found', { status: 404 });
   const me = await getCustomer().catch(() => null);
-  let ok = !!me && me.id === a.owner;
+  // The owner, and anyone who joined the owner's company.
+  let ok = !!me && (me.id === a.owner || (await kitOwnerId(me.id)) === a.owner);
   if (!ok) {
     const staff = await getStaff().catch(() => null);
     ok = !!staff && (can(staff.role, 'file_review') || can(staff.role, 'send_proof'));

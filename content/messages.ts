@@ -6,8 +6,8 @@ export type TemplateKey =
   | 'late_refund' | 'late_notice' | 'new_time' | 'reprint_started' | 'refund_issued'
   | 'claim_rejected' | 'at_risk'
   | 'custom_received' | 'custom_quote_ready' | 'custom_declined' | 'custom_alert'
-  | 'abandoned_nudge' | 'referral_reward' | 'rider_nearby'
-  | 'studio_ready' | 'studio_checked' | 'studio_changes' | 'studio_refund' | 'studio_feedback' | 'studio_credit' | 'studio_review_alert';
+  | 'abandoned_nudge' | 'referral_reward' | 'rider_nearby' | 'pay_link' | 'reorder_reminder' | 'reorder_weekly' | 'sample_credit'
+  | 'studio_ready' | 'studio_checked' | 'studio_changes' | 'studio_refund' | 'studio_feedback' | 'studio_credit' | 'studio_review_alert' | 'site_alert';
 
 /** en is the default. pcm is Nigerian Pidgin, used only for customers who chose it. */
 export type Lang = 'en' | 'pcm';
@@ -101,6 +101,22 @@ export const TEMPLATES: Record<TemplateKey, Def> = {
     vars: ['name', 'product', 'code', 'link'],
     text: (v) => `Hi ${v.name}, your ${v.product} order ${v.code} is saved and waiting. Finish paying whenever you are ready and we start straight away: ${v.link}`,
   },
+  pay_link: {
+    vars: ['name', 'code', 'amount', 'link'],
+    text: (v) => `Hi ${v.name}, your Brandit order ${v.code} is ready: ${v.amount}. See exactly what it is and pay here, and we start straight away: ${v.link}`,
+  },
+  reorder_reminder: {
+    vars: ['name', 'product', 'link', 'stop'],
+    text: (v) => `Hi ${v.name}, running low on ${v.product}? Order the same again in one tap, with your approved file: ${v.link} To stop these reminders: ${v.stop}`,
+  },
+  reorder_weekly: {
+    vars: ['name', 'product', 'link', 'stop'],
+    text: (v) => `Good morning ${v.name}. Your weekly reminder: order ${v.product} again, the same as last time, in one tap: ${v.link} To stop these reminders: ${v.stop}`,
+  },
+  sample_credit: {
+    vars: ['name', 'amount', 'code', 'days', 'link'],
+    text: (v) => `Hi ${v.name}, your Brandit sample pack is on its way. Here is ${v.amount} off your first order, to say thanks: ${v.code}. Use it within ${v.days} days: ${v.link}`,
+  },
   referral_reward: {
     vars: ['friend', 'amount', 'code', 'link'],
     text: (v) => `${v.friend} just got their first Brandit order, thanks to you. Here is ${v.amount} off your next order: ${v.code}. Use it here: ${v.link}`,
@@ -137,10 +153,14 @@ export const TEMPLATES: Record<TemplateKey, Def> = {
     vars: ['title', 'link'],
     text: (v) => `A Studio design is waiting for a check: ${v.title}. Open the queue: ${v.link}`,
   },
+  site_alert: {
+    vars: ['what'],
+    text: (v) => `Brandit site alert: ${v.what} Open the console, Setup page, to look into it.`,
+  },
 };
 
 /** Messages meant for our own team. They stay in English whatever a customer chose. */
-export const STAFF_TEMPLATES: TemplateKey[] = ['at_risk', 'custom_alert', 'studio_review_alert'];
+export const STAFF_TEMPLATES: TemplateKey[] = ['at_risk', 'custom_alert', 'studio_review_alert', 'site_alert'];
 
 // Nigerian Pidgin, for customers who switch it on. Same variables as the English text, so the same WhatsApp
 // template layout works for both. Have a Pidgin speaker on your team read these before you turn the switch on.
@@ -166,6 +186,10 @@ const PIDGIN: Record<TemplateKey, (v: Vars) => string> = {
   custom_declined: (v) => `About your custom request ${v.code}: we no fit do this one. ${v.reason} Details: ${v.link}`,
   custom_alert: (v) => TEMPLATES.custom_alert.text(v),
   abandoned_nudge: (v) => `Hi ${v.name}, your ${v.product} order ${v.code} still dey wait for you. Finish the payment when you ready and we go start work sharp-sharp: ${v.link}`,
+  pay_link: (v) => `Hi ${v.name}, your Brandit order ${v.code} don ready: ${v.amount}. See wetin dey inside and pay here, we go start work sharp-sharp: ${v.link}`,
+  reorder_reminder: (v) => `Hi ${v.name}, ${v.product} don dey finish? Order the same one again with one tap, we still get your approved file: ${v.link} If you no want these reminders: ${v.stop}`,
+  reorder_weekly: (v) => `Good morning ${v.name}. Weekly reminder: order ${v.product} again, same as last time, one tap: ${v.link} If you no want these reminders: ${v.stop}`,
+  sample_credit: (v) => `Hi ${v.name}, your Brandit sample pack don dey come. Na ${v.amount} off your first order be this, as thank you: ${v.code}. Use am within ${v.days} days: ${v.link}`,
   referral_reward: (v) => `${v.friend} just do their first Brandit order because of you. Na ${v.amount} off your next order be this: ${v.code}. Use am here: ${v.link}`,
   rider_nearby: (v) => `Your rider ${v.rider} don near, about 10 minutes. Make your delivery code ready: ${v.delivery_code}. Track am here: ${v.link}`,
   studio_ready: (v) => `Your Brandit Studio designs don ready. Come look am and pick the one you like: ${v.link}`,
@@ -175,6 +199,7 @@ const PIDGIN: Record<TemplateKey, (v: Vars) => string> = {
   studio_feedback: (v) => `${v.name} look your design and talk say: ${v.verdict}. See wetin dem write here: ${v.link}`,
   studio_credit: (v) => `Your approved design come with ${v.amount} off your print order. Order am within ${v.days} days here: ${v.link}`,
   studio_review_alert: (v) => TEMPLATES.studio_review_alert.text(v),
+  site_alert: (v) => TEMPLATES.site_alert.text(v),
 };
 
 export const pidgin = (key: TemplateKey, vars: Vars) => PIDGIN[key](vars);

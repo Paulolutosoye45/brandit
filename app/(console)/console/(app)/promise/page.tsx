@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/session';
 import { query } from '@/lib/db';
+import { nameSql } from '@/lib/lines';
 import { naira } from '@/lib/money';
 import { describeWhen } from '@/lib/time';
 import { Notice } from '@/components/Bits';
@@ -13,9 +14,11 @@ const KIND: Record<string, string> = { late: 'Late', wrong_print: 'Printed wrong
 export default async function PromiseDesk(props: { searchParams: Promise<{ e?: string; ok?: string }> }) {
   const searchParams = await props.searchParams;
   await requireStaff('claims');
-  const base = `select c.*, o.code, o.public_token, o.total_kobo, o.delivery_fee_kobo, cu.name as cname, coalesce(cu.whatsapp_phone, cu.phone) as phone, j.id as job_id, coalesce(i.label, p.name) as product
-     from claims c join orders o on o.id = c.order_id join order_items i on i.order_id = o.id join products p on p.id = i.product_id
-     left join customers cu on cu.id = o.customer_id left join jobs j on j.order_id = o.id`;
+  const base = `select c.*, o.code, o.public_token, o.total_kobo, o.delivery_fee_kobo, cu.name as cname, coalesce(cu.whatsapp_phone, cu.phone) as phone,
+       (select j.id from jobs j where j.order_id = o.id and (c.order_item_id is null or j.order_item_id = c.order_item_id) order by j.created_at, j.id limit 1) as job_id,
+       coalesce((select coalesce(i.label, p.name) from order_items i join products p on p.id = i.product_id where i.id = c.order_item_id), ${nameSql('o')}) as product
+     from claims c join orders o on o.id = c.order_id
+     left join customers cu on cu.id = o.customer_id`;
   const open = await query<any>(`${base} where c.status = 'open' order by c.created_at`);
   const done = await query<any>(`${base} where c.status = 'resolved' order by c.resolved_at desc limit 25`);
   return (

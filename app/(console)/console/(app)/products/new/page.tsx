@@ -26,7 +26,7 @@ export default async function NewProduct(props: { searchParams: Promise<{ e?: st
         <div><label className="label" htmlFor="b">One line for the product card</label><input id="b" name="blurb" maxLength={160} className="field" placeholder="Strong canvas totes with your logo, ready in 3 days." /></div>
         <div>
           <label className="label" htmlFor="c">Category</label>
-          <input id="c" name="category" list="cats" maxLength={40} className="field" placeholder="Stickers and merch" />
+          <input id="c" name="category" list="cats" maxLength={40} className="field" placeholder="Marketing prints" />
           <datalist id="cats">{cats.map((c) => <option key={c.category} value={c.category} />)}</datalist>
         </div>
         <fieldset>

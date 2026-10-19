@@ -14,19 +14,20 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Your artwork' };
 
 export default async function ArtworkPage(
-  props: { params: Promise<{ ref: string }>; searchParams: Promise<{ fix?: string }> }
+  props: { params: Promise<{ ref: string }>; searchParams: Promise<{ fix?: string; item?: string }> }
 ) {
   const params = await props.params;
+  const sp = await props.searchParams;
   if (!/^[0-9a-f-]{36}$/.test(params.ref)) notFound();
   const o = await getOrder(params.ref);
-  const item = o && (await getItem(params.ref));
+  const item = o && (await getItem(params.ref, sp.item && /^[0-9a-f-]{36}$/.test(sp.item) ? sp.item : null));
   if (!o || !item) notFound();
-  const job = await one('select stage, clock_paused, paused_reason from jobs where order_id = $1', [o.id]);
+  const job = await one('select stage, clock_paused, paused_reason from jobs where order_item_id = $1', [item.id]);
   const fixMode = !!job && job.stage === 'file_check';
   if (!['draft', 'awaiting_payment'].includes(o.status) && !fixMode) redirect(`/track/${o.public_token}`);
   const product = (await getProductById(item.product_id))!;
   const s = await getSettings();
-  const dims = printDims(product, item.size_key, item.width_ft, item.height_ft);
+  const dims = printDims(product, item.size_key, item.width_ft, item.height_ft, item.config);
   const size = product.sizes.find((x) => x.key === item.size_key);
   const me = await getCustomer().catch(() => null);
   const [kitRow, kitAssets] = me ? await Promise.all([brandKitFor(me.id), listAssets(me.id)]) : [null, []];
@@ -36,9 +37,10 @@ export default async function ArtworkPage(
   const studioOpen = !fixMode && !!me && s.studio_enabled && runnable() && product.slug !== 'id-cards' ? (await accessFor(s, me as any)).ok : false;
   return (
     <>
-      <PageHead title={fixMode ? 'Upload a new file' : 'Give us your artwork'} sub={`${product.name} · order ${o.code}`} />
+      <PageHead title={fixMode ? 'Upload a new file' : 'Give us your artwork'} sub={`${item.label ?? product.name} · order ${o.code}`} />
       <ArtworkStep
         orderId={o.id}
+        itemId={item.id}
         productName={product.name}
         isFrame={product.slug === 'picture-frames'}
         currentSizeLabel={size && product.sizes.length > 1 ? size.label : item.width_ft ? `${item.width_ft} × ${item.height_ft} ft` : null}

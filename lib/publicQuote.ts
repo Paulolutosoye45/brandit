@@ -7,6 +7,12 @@ export function publicQuote(q: Quote) {
     product: { slug: q.product.slug, name: q.product.name },
     priceKobo: q.priceKobo,
     extrasKobo: q.extrasKobo,
+    lines: q.lines.map((l) => ({ kind: l.kind, label: l.label, detail: l.detail, kobo: l.kobo })),
+    notes: q.notes,
+    config: q.config,
+    effective: q.effective,
+    basis: q.basis,
+    fromStep: q.fromStep,
     quantity: q.quantity,
     deliveryKobo: q.deliveryKobo,
     totalKobo: q.priceKobo + q.deliveryKobo,
@@ -22,5 +28,12 @@ export function publicQuote(q: Quote) {
     slotsLeft: q.slotsLeft,
     meetsDeadline: q.meetsDeadline,
     sizeKey: q.sizeKey,
+    // The print area in inches, so the builder can draw a file at the right shape.
+    printW: q.printW,
+    printH: q.printH,
+    // Only on the product page. Nothing here says what anything costs us.
+    ladder: q.ladder ?? null,
+    packages: q.packages ?? null,
+    availability: q.availability ?? null,
   };
 }

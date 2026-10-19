@@ -16,7 +16,7 @@ async function simulate(fd: FormData) {
   if (!pay) return;
   const o = await getOrder(pay.order_id);
   await confirmPayment({ reference: ref, amountKobo: pay.amount_kobo, method: 'demo' });
-  redirect(`/track/${o!.public_token}`);
+  redirect(pay.payer_email ? `/pay-link/${o!.public_token}` : `/track/${o!.public_token}`);
 }
 
 export default async function DemoPay(

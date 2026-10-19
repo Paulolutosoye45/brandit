@@ -6,7 +6,7 @@ import { Notice } from '@/components/Bits';
 type P = { slug: string; name: string; mode: string; sizes: { key: string; label: string }[]; staffOnly: boolean };
 type O = { id: string; label: string; blurb: string; products: string[] };
 
-export function NewDesign({ products, occasions, initialOccasion, initialProduct, orderId }: { products: P[]; occasions: O[]; initialOccasion: string | null; initialProduct: string | null; orderId: string | null }) {
+export function NewDesign({ products, occasions, initialOccasion, initialProduct, orderId, itemId, lineLabel }: { products: P[]; occasions: O[]; initialOccasion: string | null; initialProduct: string | null; orderId: string | null; itemId?: string | null; lineLabel?: string | null }) {
   const router = useRouter();
   const occ0 = occasions.find((o) => o.id === initialOccasion)?.id ?? '';
   const [occasion, setOccasion] = useState(occ0);
@@ -37,10 +37,10 @@ export function NewDesign({ products, occasions, initialOccasion, initialProduct
     try {
       const res = await fetch('/api/studio/projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productSlug: prod.slug, sizeKey: sizeKey || prod.sizes[0]?.key || null, widthFt: prod.mode === 'area' ? Number(w) : null, heightFt: prod.mode === 'area' ? Number(h) : null, occasion, orderId }),
+        body: JSON.stringify({ productSlug: prod.slug, sizeKey: sizeKey || prod.sizes[0]?.key || null, widthFt: prod.mode === 'area' ? Number(w) : null, heightFt: prod.mode === 'area' ? Number(h) : null, occasion, orderId, itemId: itemId ?? null }),
       });
       const j = await res.json().catch(() => ({}));
-      if (res.status === 401) { router.push(`/signin?next=${encodeURIComponent('/studio/new')}`); return; }
+      if (res.status === 401) { router.push(`/signin?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`); return; }
       if (j.next) { router.push(j.next); return; }
       setErr(j.error ?? 'Something went wrong. Try again.');
     } catch { setErr('Check your connection and try again.'); }
@@ -62,6 +62,13 @@ export function NewDesign({ products, occasions, initialOccasion, initialProduct
         </div>
       </fieldset>
 
+      {itemId && lineLabel ? (
+        <div className="card grid gap-1 p-5 sm:p-6">
+          <p className="text-[20px] font-bold">2. What are you printing?</p>
+          <p className="text-[16px]">{lineLabel}</p>
+          <p className="text-[14px] text-muted">This is the product in your basket. The design is made for exactly this size and joins the same order, so you pay once.</p>
+        </div>
+      ) : (
       <fieldset className="card grid gap-3 p-5 sm:p-6">
         <legend className="text-[20px] font-bold">2. What are you printing?</legend>
         {isStaff && <Notice>Staff ID cards in Studio are for your own company&apos;s staff. They cannot look like a government or school ID.</Notice>}
@@ -88,6 +95,7 @@ export function NewDesign({ products, occasions, initialOccasion, initialProduct
           </div>
         )}
       </fieldset>
+      )}
 
       {err && <Notice tone="bad">{err}</Notice>}
       <button className="btn-primary self-start" disabled={busy}>{busy ? 'One moment…' : 'Next: type your words'}</button>

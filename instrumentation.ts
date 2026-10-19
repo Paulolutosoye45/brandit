@@ -13,3 +13,12 @@ export async function register() {
     await runStartup();
   }
 }
+
+/**
+ * Next.js calls this for every server error. It is a separate file so the Edge copy of this hook never reaches the database
+ * driver (see the note at the top), and it does nothing unless SENTRY_DSN is set.
+ */
+export async function onRequestError(err: unknown, request: { path?: string; method?: string }, context: { routePath?: string; routeType?: string }) {
+  const { reportRequestError } = await import('./instrumentation-error');
+  await reportRequestError(err, request, context);
+}

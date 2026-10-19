@@ -27,6 +27,9 @@ export type Settings = {
   custom_quote_valid_days: number;
   nudge_enabled: boolean;         // one friendly reminder for an order that was filled in but not paid
   nudge_after_minutes: number;
+  reminders_enabled: boolean;     // "running low?" reminders after an order, and weekly reminders customers asked for
+  reminder_days: number;          // how long after delivery the "running low?" reminder goes
+  sample_credit_days: number;     // how long the credit from a sample pack stays valid
   referral_enabled: boolean;
   referral_friend_percent: number;   // what a friend takes off their first order
   referral_friend_cap_kobo: number;  // the most a friend's discount can be
@@ -35,6 +38,7 @@ export type Settings = {
   referral_max_rewards: number;      // the most rewards one person can earn
   windows_enabled: boolean;       // customers can choose morning or afternoon for delivery
   pidgin_enabled: boolean;        // show the English / Pidgin switch
+  target_margin_pct: number;      // the console warns when a price leaves less margin than this, once a cost is recorded
 
   // ---- Brandit Studio (AI designs). Every price is whole kobo and includes VAT, like the rest of the site. ----
   studio_enabled: boolean;                 // master switch: off hides Studio and stops new work
@@ -111,6 +115,9 @@ export const DEFAULT_SETTINGS: Settings = {
   custom_quote_valid_days: 7,
   nudge_enabled: true,
   nudge_after_minutes: 120,
+  reminders_enabled: true,
+  reminder_days: 90,
+  sample_credit_days: 60,
   referral_enabled: true,
   referral_friend_percent: 10,
   referral_friend_cap_kobo: 500_000,
@@ -119,6 +126,7 @@ export const DEFAULT_SETTINGS: Settings = {
   referral_max_rewards: 20,
   windows_enabled: true,
   pidgin_enabled: true,
+  target_margin_pct: 40,
 
   studio_enabled: true,
   studio_standard_on: true,

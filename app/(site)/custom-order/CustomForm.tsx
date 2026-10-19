@@ -104,7 +104,7 @@ export function CustomForm({ products, initialProduct, defaults, replyHours, wha
       <section className="card p-5 grid gap-3" aria-labelledby="c-files">
         <h2 id="c-files" className="text-[22px]">Photos or examples <span className="text-[16px] font-normal text-muted">(optional)</span></h2>
         <p className="text-[15px] text-muted">A sketch, a logo, a picture of something similar. Up to {MAX_FILES} files, JPG, PNG, WebP or PDF.</p>
-        <input ref={pick} id="c-file-input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple className="sr-only" onChange={(e) => addFiles(e.target.files)} />
+        <input ref={pick} id="c-file-input" type="file" aria-label="Choose photos or files" accept="image/jpeg,image/png,image/webp,application/pdf" multiple className="sr-only" onChange={(e) => addFiles(e.target.files)} />
         <div className="flex flex-wrap gap-2">
           <label htmlFor="c-file-input" className={`btn-secondary btn-sm cursor-pointer ${files.length >= MAX_FILES ? 'opacity-60 pointer-events-none' : ''}`}>{files.length ? 'Add another file' : 'Choose files'}</label>
         </div>

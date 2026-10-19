@@ -850,4 +850,216 @@ alter table order_items add column studio_version_id uuid;
 create index orders_studio_idx on orders (studio_project_id) where studio_project_id is not null;
 `,
   },
+  {
+    id: '008_catalogue_pricing',
+    sql: `
+-- ============ Catalogue and pricing, version 2 ============
+-- Packages (Standard, Premium, Luxury): one tap sets several options. Stored as a list on the product.
+alter table products add column packages jsonb not null default '[]';
+-- Whether a customer may type a quantity between the steps, and the smallest and largest allowed.
+alter table products add column qty_custom boolean not null default false;
+alter table products add column qty_min int;
+alter table products add column qty_max int;
+
+-- What a price cell costs Brandit to make (per square foot for banner rates). Optional: the console warns when a price is thin.
+alter table price_rules add column cost_kobo int;
+alter table price_rules add constraint price_rules_cost_nonneg check (coalesce(cost_kobo, 0) >= 0) not valid;
+
+-- One price per cell. Duplicates would only ever be mistakes; keep the newest and make a new one impossible.
+delete from price_rules a using price_rules b
+  where a.product_id = b.product_id and coalesce(a.quantity, 0) = coalesce(b.quantity, 0)
+    and coalesce(a.size_key, '') = coalesce(b.size_key, '') and a.config = b.config and a.id < b.id;
+create unique index price_rules_cell_idx on price_rules (product_id, coalesce(quantity, 0), coalesce(size_key, ''), config);
+
+-- Who changed which price, and when. Never edited. No foreign keys, so a person who leaves or a product that is deleted
+-- does not erase the record.
+create table price_history (
+  id bigint generated always as identity primary key,
+  at timestamptz not null default now(),
+  staff_id uuid,
+  actor text not null,
+  product_id uuid,
+  product_name text not null default '',
+  kind text not null,
+  summary text not null,
+  detail jsonb not null default '{}'
+);
+create index price_history_product_idx on price_history (product_id, at desc);
+create index price_history_at_idx on price_history (at desc);
+`,
+  },
+  {
+    id: '009_one_order_flow',
+    sql: `
+-- ============ One order flow: a basket of several lines, one payment ============
+-- An order has always been able to hold several lines. Now it does. position keeps them in the order the customer added them.
+alter table order_items add column position int not null default 0;
+alter table order_items add column created_at timestamptz not null default now();
+create index order_items_order_pos_idx on order_items (order_id, position);
+
+-- A problem can be about one line of an order. Empty means the whole order.
+alter table claims add column order_item_id uuid references order_items(id);
+
+-- Where an unpaid basket was started from ("home", "product", "short-link", "reorder"). Used only to learn which door customers use.
+alter table orders add column started_from text;
+`,
+  },
+  {
+    id: '010_console_v2',
+    sql: `
+-- ============ Console v2: one record of who changed what, and the words the team can edit ============
+-- Who changed what. Never edited. No foreign keys, so a person who leaves does not erase the record.
+create table audit_log (
+  id bigint generated always as identity primary key,
+  at timestamptz not null default now(),
+  staff_id uuid,
+  actor text not null,
+  area text not null,
+  action text not null,
+  target text not null default '',
+  summary text not null,
+  detail jsonb not null default '{}'
+);
+create index audit_log_at_idx on audit_log (at desc);
+create index audit_log_area_idx on audit_log (area, at desc);
+
+-- A page of words the team wrote to replace the built-in version (Terms, Privacy, Refunds, AI designs).
+create table content_pages (
+  slug text primary key,
+  title text not null,
+  body text not null,
+  updated_at timestamptz not null default now(),
+  updated_by text not null default ''
+);
+create table content_page_versions (
+  id bigint generated always as identity primary key,
+  slug text not null,
+  title text not null,
+  body text not null,
+  saved_at timestamptz not null default now(),
+  saved_by text not null default '',
+  note text not null default ''
+);
+create index content_page_versions_slug_idx on content_page_versions (slug, saved_at desc);
+
+-- FAQ. A row with a key replaces (or hides) one built-in answer. A row without a key is a question the team added.
+create table faq_items (
+  id uuid primary key default gen_random_uuid(),
+  key text,
+  group_id text not null,
+  question text not null default '',
+  answer text not null default '',
+  hidden boolean not null default false,
+  position int not null default 0,
+  updated_at timestamptz not null default now(),
+  updated_by text not null default ''
+);
+create unique index faq_items_key_idx on faq_items (key) where key is not null;
+
+-- Notes the team keeps about a customer. Never shown to the customer.
+create table customer_notes (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references customers(id) on delete cascade,
+  body text not null,
+  staff_id uuid,
+  staff_name text not null default '',
+  created_at timestamptz not null default now()
+);
+create index customer_notes_customer_idx on customer_notes (customer_id, created_at desc);
+
+-- "Forgot PIN" for staff: a six-digit code sent to the staff member's email. Only a hash is stored.
+create table staff_reset_codes (
+  staff_id uuid primary key references staff(id) on delete cascade,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempts int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- A refund records why, and who sent it.
+alter table payments add column refund_reason text;
+alter table payments add column staff_id uuid;
+`,
+  },
+  {
+    id: '011_studio_in_order',
+    sql: `
+-- Studio inside the order. A line can now be "made by Brandit Studio": the design fee is part of the order's one payment,
+-- Studio starts after that payment, and the line waits for the customer to approve a design before it can print.
+alter table order_items add column studio_project_id uuid references studio_projects(id);
+alter table order_items add column studio_tier text check (studio_tier in ('standard','premium'));
+alter table order_items add column studio_fee_kobo int not null default 0;   -- the design fee in this line's price, fixed when the price was worked out
+alter table order_items drop constraint if exists order_items_artwork_path_check;
+alter table order_items add constraint order_items_artwork_path_check check (artwork_path in ('upload','design','studio'));
+create index order_items_studio_idx on order_items (studio_project_id) where studio_project_id is not null;
+alter table studio_purchases add column order_id uuid references orders(id);   -- set when the design was paid inside an order
+`,
+  },
+  {
+    id: '012_extras',
+    sql: `
+-- ---- Pay links: someone else pays, the order stays with the person who built it ----
+alter table orders add column pay_note text;                              -- a short message from the customer to whoever opens the link
+alter table orders add column pay_link_at timestamptz;                    -- when the link was first made
+alter table payments add column payer_name text;                          -- set when a payment came through a pay link
+alter table payments add column payer_email text;
+
+-- ---- Orders staff build from a WhatsApp chat ----
+alter table orders add column staff_built boolean not null default false;
+alter table orders add column built_by uuid references staff(id);
+
+-- ---- Personalised batches: one name (and a count) per row ----
+alter table products add column personalise boolean not null default false;
+update products set personalise = true where slug in ('id-cards', 'tees-and-totes');
+alter table order_items add column names jsonb;                           -- [{"name":"Ada Obi","note":"Accounts","qty":1}, ...]
+
+-- ---- Sample pack: a product with no artwork whose price comes back as credit ----
+alter table products add column sample boolean not null default false;
+alter table coupons drop constraint if exists coupons_source_check;
+alter table coupons add constraint coupons_source_check check (source in ('manual','referral','reward','sample'));
+alter table orders add column sample_coupon_id uuid references coupons(id);
+
+-- ---- Repeat reminders ----
+alter table customers add column reminders_ok boolean not null default true;   -- switches off every reorder reminder at once
+create table reminders (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references customers(id) on delete cascade,
+  kind text not null check (kind in ('weekly','running_low')),
+  source_order_id uuid not null references orders(id),
+  weekday int check (weekday between 1 and 7),                              -- 1 Monday to 7 Sunday, weekly reminders only
+  next_at timestamptz not null,
+  active boolean not null default true,
+  stop_token text unique not null,
+  last_sent_at timestamptz,
+  sent_count int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index reminders_due_idx on reminders (next_at) where active;
+create unique index reminders_weekly_one on reminders (customer_id, source_order_id) where kind = 'weekly' and active;
+create unique index reminders_low_one on reminders (source_order_id) where kind = 'running_low';
+
+-- ---- Business accounts: several people under one company ----
+alter table businesses add column owner_customer_id uuid references customers(id);
+alter table businesses add column join_token text unique;
+alter table customers add column business_role text check (business_role is null or business_role in ('owner','member'));
+update businesses b set owner_customer_id = (select c.id from customers c where c.business_id = b.id order by c.created_at limit 1);
+update customers c set business_role = case when b.owner_customer_id = c.id then 'owner' else 'member' end from businesses b where b.id = c.business_id;
+update businesses set join_token = substr(replace(gen_random_uuid()::text, '-', ''), 1, 20) where join_token is null;
+
+-- ---- Fix my file: an automatically fixed copy remembers the file it came from ----
+alter table files add column original_file_id uuid references files(id);
+alter table files add column fix_note text;
+`,
+  },
+  {
+    id: '013_categories',
+    sql: `
+-- ---- Products grouped the way people look for them. Only the names the catalogue itself gave are changed; a name the team typed stays. ----
+update products set category = 'Cards and stationery' where slug = 'business-cards' and category = 'Cards';
+update products set category = 'IDs and events' where slug = 'id-cards' and category = 'Cards';
+update products set category = 'Marketing prints' where slug in ('flyers', 'posters', 'stickers') and category in ('Flyers and posters', 'Stickers and merch');
+update products set category = 'Tees and Totes' where slug = 'tees-and-totes' and category = 'Stickers and merch';
+update products set category = 'Frames and gifts' where slug = 'picture-frames' and category = 'Frames and photos';
+`,
+  },
 ];

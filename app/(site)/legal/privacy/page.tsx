@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { OwnPage } from '@/components/OwnPage';
+import { pageOverride } from '@/lib/contentPages';
 import { LegalPage, LSection, type TocItem } from '@/components/LegalPage';
 import { getSettings } from '@/lib/settings';
-import { SITE, contact } from '@/lib/site';
+import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/business';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Privacy Policy', description: 'What Brandit collects, why, who sees it, how long we keep it, and how to see or delete your data.' };
@@ -23,8 +26,10 @@ const TOC: TocItem[] = [
 ];
 
 export default async function Privacy() {
+  const mine = await pageOverride('privacy');
+  if (mine) return <OwnPage title={mine.title} updatedAt={mine.updated_at} body={mine.body} />;
   const s = await getSettings();
-  const c = contact();
+  const c = await getContact();
   let n = 0;
   const sec = (id: string) => ({ id, n: ++n, title: TOC.find((x) => x.id === id)!.title });
   return (

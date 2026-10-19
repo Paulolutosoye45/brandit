@@ -15,6 +15,9 @@ export const isDemoEnv = (env: NodeJS.ProcessEnv) => {
   return env.NODE_ENV !== 'production';
 };
 
+/** The private test copy of the site (APP_ENV=staging): not indexed, behind a password, and its payments are Paystack test payments. */
+export const isStaging = (env: NodeJS.ProcessEnv) => env.APP_ENV === 'staging';
+
 /** True on Vercel: no disk that keeps files, and every request may land on a different short-lived copy of the server. */
 export const onVercel = (env: NodeJS.ProcessEnv) => !!env.VERCEL;
 
@@ -81,11 +84,13 @@ export function dbHint(err: unknown, env: NodeJS.ProcessEnv = process.env): stri
   if (/does not support SSL/i.test(msg)) return 'This database does not use SSL. Set DATABASE_SSL to false.';
   if (/self[- ]signed|certificate|SSL/i.test(msg)) return 'The SSL handshake failed. Set DATABASE_SSL to true (hosted databases) or false (a database with no SSL).';
   if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(msg)) {
+    if (env.RENDER) return 'The database refused the connection. On Render, check that the database is running (its Events tab), and that DATABASE_URL still comes from the database (Environment tab, "from database"), not a pasted copy.';
     return onVercel(env)
       ? 'The database refused the connection. Check the host and port in DATABASE_URL. Vercel connects from changing addresses, so the database must accept connections from anywhere (on Render: the database\'s Info page, Networking, must allow 0.0.0.0/0).'
       : 'The database refused the connection. Check the host and port in DATABASE_URL, and that the database is running.';
   }
   if (code === 'ETIMEDOUT' || /ETIMEDOUT|timeout|timed out|terminated/i.test(msg)) {
+    if (env.RENDER) return 'The database did not answer in time. On Render, the web service and the database must be in the same region (Frankfurt) and DATABASE_URL must be the database\'s Internal address, which the Blueprint sets for you. Check that the database is running (its Events tab).';
     return onVercel(env)
       ? 'The database did not answer in time. Check that the database is running, that DATABASE_URL is its External address, and that it accepts connections from anywhere (Vercel connects from changing addresses; on Render, the database\'s Networking section must allow 0.0.0.0/0).'
       : 'The database did not answer in time. Check that it is running and that DATABASE_URL is right.';

@@ -16,6 +16,7 @@ import { effectiveWindow, windowText } from '@/lib/windows';
 import { riderUrl, riderWhatsAppLink } from '@/lib/rider';
 import { getSettings } from '@/lib/settings';
 import { studioFacts } from '@/lib/studio/attach';
+import { proofLabel, proofStateOf } from '@/lib/lines';
 import * as A from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export default async function JobPage(
   const staff = await requireStaff();
   const j = await one<any>(
     `select j.*, o.code, o.public_token, o.speed, o.promised_at, o.pickup, o.area, o.address, o.delivery_code, o.delivery_window, o.template_id, o.plain_pack, o.total_kobo, o.status as order_status, o.paid_at, o.delivered_at,
-            i.id as item_id, i.quantity, i.config, i.size_key, i.width_ft, i.height_ft, i.artwork_path, i.design_brief, i.preview_approved_at, i.artwork_file_id, coalesce(i.label, p.name) as product_name, p.sizes,
+            i.id as item_id, i.quantity, i.config, i.size_key, i.width_ft, i.height_ft, i.artwork_path, i.design_brief, i.names, i.preview_approved_at, i.artwork_file_id, coalesce(i.label, p.name) as product_name, p.sizes,
             c.name as cname, coalesce(c.whatsapp_phone, c.phone) as phone, c.email, b.name as company
      from jobs j join orders o on o.id = j.order_id join order_items i on i.id = j.order_item_id join products p on p.id = i.product_id
      left join customers c on c.id = o.customer_id left join businesses b on b.id = o.business_id where j.id = $1`,
@@ -43,14 +44,18 @@ export default async function JobPage(
   const now = new Date();
   const stage = j.stage as Stage;
   const status = statusOf({ stage, clock_paused: j.clock_paused, promised_at: j.promised_at, at_risk: j.at_risk }, now);
-  const [events, files, proofs, msgs, presses, delivery, claims] = await Promise.all([
+  const [events, files, proofs, msgs, presses, delivery, claims, siblings] = await Promise.all([
     query<any>('select e.*, s.name as staff_name from job_events e left join staff s on s.id = e.staff_id where e.job_id = $1 order by e.id desc', [j.id]),
-    query<any>("select id, kind, original_name, mime, check_result, width_px, height_px, created_at from files where order_item_id = $1 order by created_at desc", [j.item_id]),
+    query<any>("select id, kind, original_name, mime, check_result, width_px, height_px, created_at, original_file_id, fix_note from files where order_item_id = $1 order by created_at desc", [j.item_id]),
     query<any>('select * from proofs where order_item_id = $1 order by version desc', [j.item_id]),
     query<any>('select template, channel, status, error, created_at from messages where order_id = $1 order by id desc limit 12', [j.order_id]),
     query<any>('select id, name from presses order by name'),
     one<any>('select * from deliveries where order_id = $1', [j.order_id]),
     query<any>('select kind, status, resolution, description from claims where order_id = $1', [j.order_id]),
+    query<any>(
+      `select j2.id, j2.stage, coalesce(i.label, p.name) as name, i.quantity, i.artwork_path, i.preview_approved_at, i.artwork_file_id, (i.id = $2::uuid) as me,
+         (select pf.status from proofs pf where pf.order_item_id = i.id order by pf.version desc limit 1) as proof_status
+       from jobs j2 join order_items i on i.id = j2.order_item_id join products p on p.id = i.product_id where j2.order_id = $1 order by i.position, i.id`, [j.order_id, j.item_id]),
   ]);
   const art = files.find((f) => f.id === j.artwork_file_id);
   const qc = files.find((f) => f.kind === 'qc_photo');
@@ -97,9 +102,43 @@ export default async function JobPage(
             </ol>
           </section>
 
+          {Array.isArray(j.names) && j.names.length > 0 && (
+            <section className="card p-5 grid gap-3" aria-label="Names to print">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div><h2 className="text-[22px]">Names to print</h2><p className="text-[14px] text-muted">{j.names.length} {j.names.length === 1 ? 'name' : 'names'}, {(j.names as any[]).reduce((a, r) => a + (Number(r.qty) || 0), 0)} pieces. Each one is printed with its own name.</p></div>
+                <a className="btn-secondary btn-sm" href={`/api/console/jobs/${j.id}/names`} download>Download as spreadsheet</a>
+              </div>
+              <div className="overflow-x-auto rounded-md2 border border-line">
+                <table className="w-full min-w-[420px] text-left text-[15px]">
+                  <thead><tr className="border-b border-line text-[13px] text-muted"><th className="px-3 py-2 font-bold">No.</th><th className="px-3 py-2 font-bold">Name</th><th className="px-3 py-2 font-bold">Note</th><th className="px-3 py-2 font-bold">Copies</th></tr></thead>
+                  <tbody>
+                    {(j.names as any[]).slice(0, 25).map((r, i) => <tr key={i} className="border-b border-line last:border-0"><td className="px-3 py-1.5 tabular text-muted">{i + 1}</td><td className="px-3 py-1.5 font-bold">{r.name}</td><td className="px-3 py-1.5">{r.note}</td><td className="px-3 py-1.5 tabular">{r.qty}</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+              {j.names.length > 25 && <p className="text-[14px] text-muted">The first 25 are shown. Download the spreadsheet for all {j.names.length}.</p>}
+            </section>
+          )}
+
+          {siblings.length > 1 && (
+            <section className="card p-5 grid gap-3" aria-label="Everything in this order">
+              <div><h2 className="text-[22px]">All {siblings.length} products in {j.code}</h2><p className="text-[14px] text-muted">One payment and one delivery. Each product is checked, proofed and printed on its own. The rider leaves when the last one is ready.</p></div>
+              <ul className="grid divide-y divide-line">
+                {siblings.map((l: any) => (
+                  <li key={l.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 text-[15px]">
+                    {l.me ? <span className="font-bold">{l.quantity.toLocaleString('en-US')} × {l.name} (this job)</span> : <Link className="font-bold underline" href={`/console/jobs/${l.id}`}>{l.quantity.toLocaleString('en-US')} × {l.name}</Link>}
+                    <span className="text-muted">{STAGE_LABEL[l.stage as Stage]} · {proofLabel(proofStateOf(l, { stage: l.stage }))}{l.proof_status === 'changes_requested' ? ' · changes asked for' : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="card p-5 grid gap-3" aria-label="Artwork">
             <h2 className="text-[22px]">Artwork</h2>
-            {j.artwork_path === 'design' ? (
+            {j.artwork_path === 'studio' ? (
+              <Notice tone="neutral"><span className="font-bold">Made by Brandit Studio.</span> The customer has paid for the design with this order. Studio is making the concepts. When they approve one (and a Brandit designer has checked it, on Premium) the print file lands here and this job goes to the file desk. Nothing to do yet.</Notice>
+            ) : j.artwork_path === 'design' ? (
               <div className="grid gap-2 text-[15px]">
                 <p className="font-bold">{brief?.custom ? `Custom job (request ${brief.request})` : `Design job${brief?.fix ? ' (fix my file)' : ''}`}</p>
                 <dl className="grid gap-1.5">{(brief?.custom
@@ -140,6 +179,7 @@ export default async function JobPage(
                   <div className="grid gap-1.5 text-[15px]">
                     <p className="font-bold break-all">{art.original_name}</p>
                     {art.width_px && <p className="text-muted">{art.width_px} × {art.height_px} px{art.check_result?.dpi ? ` · ${art.check_result.dpi} dots per inch at print size` : ''}</p>}
+                    {art.fix_note?.startsWith('bleed') && <p className="font-bold">The customer asked us to add a 3 mm extra edge (mirrored). This file is that copy; their own file is the one before it in the list.</p>}
                     <p>Automatic check: <StatusPill status={art.check_result?.status === 'pass' ? 'good' : art.check_result?.status === 'warn' ? 'warn' : 'bad'} label={art.check_result?.status ?? 'unchecked'} /></p>
                     <p>Customer approved the preview: <span className="font-bold">{j.preview_approved_at ? describeWhen(new Date(j.preview_approved_at)) : 'not yet'}</span></p>
                     <a className="underline font-bold" href={`/api/files/${art.id}`} target="_blank" rel="noreferrer">Open the file at full size</a>
@@ -147,6 +187,10 @@ export default async function JobPage(
                 </div>
                 <ul className="grid gap-1 text-[14px]">{(art.check_result?.lines ?? []).filter((l: any) => l.status !== 'pass').map((l: any) => <li key={l.id}><span className="font-bold">{l.label}:</span> {l.message}</li>)}</ul>
               </div>
+            ) : brief?.kind === 'sample' ? (
+              <Notice tone="neutral"><span className="font-bold">Sample pack.</span> There is no artwork to print. Pack the paper and finish samples, take a photo of the pack for the quality check, and send it out like any other order. Its price comes back to the customer as credit on their first order.</Notice>
+            ) : brief?.kind === 'file_later' ? (
+              <Notice tone="warn"><span className="font-bold">Built from a WhatsApp chat.</span> The customer paid before sending the file. They have a message with a link to upload it. When it arrives, check it and send it to print.</Notice>
             ) : <p className="text-muted">No file yet.</p>}
             {studio && (
               <div className="grid gap-1 rounded-md2 bg-accent/30 p-3 text-[14px]">
@@ -163,7 +207,7 @@ export default async function JobPage(
           <section className="card p-5 grid gap-5 no-print" aria-label="Actions">
             <h2 className="text-[22px]">What happens next</h2>
 
-            {stage === 'file_check' && can(staff.role, 'file_review') && (
+            {stage === 'file_check' && can(staff.role, 'file_review') && j.artwork_path !== 'studio' && (
               <div className="grid gap-5">
                 {j.artwork_path === 'upload' && (
                   <form action={A.passFile} className="grid gap-2"><input type="hidden" name="jobId" value={j.id} />

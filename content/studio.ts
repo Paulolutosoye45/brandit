@@ -30,7 +30,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'owambe', label: 'Owambe or party', blurb: 'Aso-ebi, family and friends, a day to remember.', tone: 'festive',
     art: 'a lively Nigerian owambe celebration with matching family fabric (aso-ebi), joyful and colourful',
-    palette: 'royal-gold', styles: ['ankara', 'gold-white', 'aso-oke'], products: ['flyers', 'posters', 'branded-t-shirts', 'flex-banners'],
+    palette: 'royal-gold', styles: ['ankara', 'gold-white', 'aso-oke'], products: ['flyers', 'posters', 'tees-and-totes', 'flex-banners'],
     lines: [
       { id: 'who', label: 'Whose celebration?', hint: 'Names exactly as they should print', role: 'headline', required: true, example: 'Chief & Mrs Adéwálé Ọláńrewájú', max: 70 },
       { id: 'what', label: 'What is the occasion?', hint: 'For example: 60th birthday and thanksgiving', role: 'sub', example: '60th Birthday & Thanksgiving', max: 60 },
@@ -43,7 +43,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'wedding', label: 'Wedding or engagement', blurb: 'Traditional or white wedding, save-the-date, programme.', tone: 'festive',
     art: 'an elegant Nigerian wedding celebration, refined and joyful, with fine fabric textures',
-    palette: 'wine-cream', styles: ['gold-white', 'floral', 'aso-oke'], products: ['flyers', 'posters', 'picture-frames', 'branded-t-shirts', 'stickers'],
+    palette: 'wine-cream', styles: ['gold-white', 'floral', 'aso-oke'], products: ['flyers', 'posters', 'picture-frames', 'tees-and-totes', 'stickers'],
     lines: [
       { id: 'couple', label: 'The couple', hint: 'Both names as they should print', role: 'headline', required: true, example: 'Ṣọlá & Chidi', max: 50 },
       { id: 'what', label: 'What is the event?', hint: 'Traditional wedding, white wedding, engagement', role: 'sub', example: 'Traditional Wedding', max: 50 },
@@ -55,7 +55,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'church', label: 'Church or mosque programme', blurb: 'Thanksgiving, convention, harvest, Ramadan, naming.', tone: 'dignified',
     art: 'a calm, dignified Nigerian faith gathering, soft light, restrained and respectful, no religious figures',
-    palette: 'navy-silver', styles: ['church-serene', 'gold-white', 'modern-minimal'], products: ['flyers', 'posters', 'flex-banners', 'roll-up-banners', 'branded-t-shirts'],
+    palette: 'navy-silver', styles: ['church-serene', 'gold-white', 'modern-minimal'], products: ['flyers', 'posters', 'flex-banners', 'roll-up-banners', 'tees-and-totes'],
     lines: [
       { id: 'title', label: 'Programme title', hint: 'For example: Annual Thanksgiving Service', role: 'headline', required: true, example: 'Annual Thanksgiving Service', max: 60 },
       { id: 'theme', label: 'Theme or verse (optional)', hint: 'Type it exactly', role: 'sub', example: 'Theme: Great is Thy Faithfulness', max: 90 },
@@ -67,7 +67,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'naming', label: 'Naming ceremony', blurb: 'Welcome a new baby, with the names and the day.', tone: 'festive',
     art: 'a warm Nigerian baby naming ceremony, gentle and joyful, soft colours, no photographs of babies',
-    palette: 'lemon-white', styles: ['floral', 'modern-minimal', 'ankara'], products: ['flyers', 'posters', 'picture-frames', 'stickers', 'branded-t-shirts'],
+    palette: 'lemon-white', styles: ['floral', 'modern-minimal', 'ankara'], products: ['flyers', 'posters', 'picture-frames', 'stickers', 'tees-and-totes'],
     lines: [
       { id: 'name', label: 'Baby\'s name(s)', hint: 'All the names, exactly as given', role: 'headline', required: true, example: 'Ọ̀rẹ́oluwa Adébáyọ̀ Chukwuemeka', max: 70 },
       { id: 'parents', label: 'Parents (optional)', hint: '', role: 'sub', example: 'Son of Mr & Mrs Adébáyọ̀', max: 70 },
@@ -90,7 +90,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'birthday', label: 'Birthday', blurb: 'For any age. A shirt, a flyer, a poster, a sticker.', tone: 'playful',
     art: 'a joyful birthday celebration, bright and fun, confetti and balloons, festive',
-    palette: 'coral-teal', styles: ['bold-pop', 'ankara', 'floral'], products: ['branded-t-shirts', 'posters', 'flyers', 'stickers', 'picture-frames'],
+    palette: 'coral-teal', styles: ['bold-pop', 'ankara', 'floral'], products: ['tees-and-totes', 'posters', 'flyers', 'stickers', 'picture-frames'],
     lines: [
       { id: 'name', label: 'Celebrant\'s name', hint: '', role: 'headline', required: true, example: 'Kẹ́mi turns 30', max: 50 },
       { id: 'tagline', label: 'A line (optional)', hint: 'For example: Thirty, flirty and thriving', role: 'sub', example: 'Thirty, flirty and thriving', max: 70 },
@@ -102,7 +102,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'school', label: 'School or graduation', blurb: 'Class sets, graduation, school events, club shirts.', tone: 'business',
     art: 'a proud Nigerian school or graduation theme, clean and uplifting, books, laurels and bright school colours',
-    palette: 'navy-gold', styles: ['modern-minimal', 'bold-pop', 'gold-white'], products: ['branded-t-shirts', 'posters', 'flyers', 'flex-banners', 'stickers'],
+    palette: 'navy-gold', styles: ['modern-minimal', 'bold-pop', 'gold-white'], products: ['tees-and-totes', 'posters', 'flyers', 'flex-banners', 'stickers'],
     lines: [
       { id: 'name', label: 'School, class or group name', hint: '', role: 'headline', required: true, example: 'Federal Government College, Class of 2026', max: 70 },
       { id: 'motto', label: 'Motto or line (optional)', hint: '', role: 'sub', example: 'Unity and Faith, Peace and Progress', max: 70 },
@@ -125,7 +125,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'party', label: 'Detty December or event night', blurb: 'Parties, concerts, brunches, club nights.', tone: 'playful',
     art: 'an energetic Lagos nightlife and festive-season event, bold colour, rhythm and movement',
-    palette: 'purple-gold', styles: ['bold-pop', 'neon-night', 'lagos-skyline'], products: ['flyers', 'posters', 'flex-banners', 'branded-t-shirts', 'stickers'],
+    palette: 'purple-gold', styles: ['bold-pop', 'neon-night', 'lagos-skyline'], products: ['flyers', 'posters', 'flex-banners', 'tees-and-totes', 'stickers'],
     lines: [
       { id: 'name', label: 'Event name', hint: '', role: 'headline', required: true, example: 'Detty December Brunch', max: 50 },
       { id: 'tag', label: 'Tagline (optional)', hint: '', role: 'sub', example: 'Music. Food. Good vibes.', max: 70 },
@@ -150,7 +150,7 @@ export const OCCASIONS: Occasion[] = [
   {
     id: 'group', label: 'Group shirt or reunion', blurb: 'Family reunion, team, church group, class.', tone: 'playful',
     art: 'a proud group celebration, bold and unified, strong graphic shapes that print well on a shirt',
-    palette: 'emerald-gold', styles: ['bold-pop', 'ankara', 'modern-minimal'], products: ['branded-t-shirts', 'stickers', 'posters', 'flex-banners'],
+    palette: 'emerald-gold', styles: ['bold-pop', 'ankara', 'modern-minimal'], products: ['tees-and-totes', 'stickers', 'posters', 'flex-banners'],
     lines: [
       { id: 'name', label: 'Group name', hint: '', role: 'headline', required: true, example: 'Ojo Family Reunion', max: 50 },
       { id: 'year', label: 'Year or event', hint: '', role: 'sub', example: 'Lagos 2026', max: 40 },

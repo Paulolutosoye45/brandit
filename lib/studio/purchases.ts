@@ -25,7 +25,7 @@ import { capState } from './ledger';
 export const STUDIO_REF = 'STU-';
 export const isStudioRef = (ref: string) => ref.startsWith(STUDIO_REF);
 
-export type Purchase = { id: string; customer_id: string; project_id: string | null; sku: Sku; amount_kobo: number; provider_ref: string; status: 'pending' | 'paid' | 'refunded' | 'failed'; method: string | null; applied_at: string | null; raw: any; created_at: string };
+export type Purchase = { id: string; customer_id: string; project_id: string | null; order_id?: string | null; sku: Sku; amount_kobo: number; provider_ref: string; status: 'pending' | 'paid' | 'refunded' | 'failed'; method: string | null; applied_at: string | null; raw: any; created_at: string };
 
 export type BuyIn = { sku: Sku; projectId?: string; versionId?: string };
 export type BuyOut = Ok<{ url: string; reference: string; amountKobo: number }> | Ok<{ done: true; projectId: string | null }> | Fail;
@@ -37,7 +37,7 @@ async function wallet(customerId: string): Promise<number> {
 export const walletOf = wallet;
 
 /** What buying this sku means for this project, and why not if it can't be. */
-async function check(c: Customer, i: BuyIn): Promise<{ ok: true; amount: number; project: Project | null } | Fail> {
+export async function checkPurchase(c: Customer, i: BuyIn): Promise<{ ok: true; amount: number; project: Project | null } | Fail> {
   const s = await getSettings();
   const acc = await accessFor(s, c as any);
   if (!acc.ok) return { ok: false, error: acc.message, code: acc.reason };
@@ -90,7 +90,7 @@ async function check(c: Customer, i: BuyIn): Promise<{ ok: true; amount: number;
 
 /** Pay with a design from the pack. No money moves. */
 export async function unlockWithPack(c: Customer, projectId: string): Promise<Ok<{ projectId: string }> | Fail> {
-  const chk = await check(c, { sku: 'standard', projectId });
+  const chk = await checkPurchase(c, { sku: 'standard', projectId });
   if (!chk.ok) return chk;
   const s = await getSettings();
   const used = await one<{ standard_credits: number }>('update studio_wallets set standard_credits = standard_credits - 1 where customer_id = $1 and standard_credits > 0 returning standard_credits', [c.id]);
@@ -103,7 +103,7 @@ export async function unlockWithPack(c: Customer, projectId: string): Promise<Ok
 }
 
 export async function startPurchase(c: Customer, i: BuyIn): Promise<BuyOut> {
-  const chk = await check(c, i);
+  const chk = await checkPurchase(c, i);
   if (!chk.ok) return chk;
   if (!(c.email || c.phone)) return { ok: false, error: 'Sign in with an email or phone number to pay.' };
   const reference = `${STUDIO_REF}${token(14)}`;
@@ -149,7 +149,7 @@ export async function confirmStudioPayment(p: { reference: string; amountKobo: n
 }
 
 /** Do what the purchase was for. Runs once: the first caller wins the right to apply it. */
-export async function applyPurchase(pu: Purchase, o: { fromPack?: boolean } = {}): Promise<void> {
+export async function applyPurchase(pu: Purchase, o: { fromPack?: boolean; fromOrder?: boolean } = {}): Promise<void> {
   const first = await one('update studio_purchases set applied_at = now() where id = $1 and applied_at is null returning id', [pu.id]);
   if (!first) return;
   const s = await getSettings();
@@ -165,8 +165,8 @@ export async function applyPurchase(pu: Purchase, o: { fromPack?: boolean } = {}
     if (!proj) return;
     if (pu.sku === 'standard' || pu.sku === 'premium') {
       const tier: Tier = pu.sku;
-      await query("update studio_projects set tier = $2, status = 'active', paid_kobo = paid_kobo + $3, paid_at = now(), from_pack = $4, credit_kobo = $5 where id = $1", [projectId, tier, pu.amount_kobo, !!o.fromPack, allowanceFor(tier, s).creditKobo]);
-      await audit(projectId, `customer:${pu.customer_id}`, 'unlocked', { tier, amount: pu.amount_kobo, pack: !!o.fromPack });
+      await query("update studio_projects set tier = $2, status = 'active', paid_kobo = paid_kobo + $3, paid_at = now(), from_pack = $4, credit_kobo = $5 where id = $1", [projectId, tier, pu.amount_kobo, !!o.fromPack, o.fromOrder ? 0 : allowanceFor(tier, s).creditKobo]);
+      await audit(projectId, `customer:${pu.customer_id}`, 'unlocked', { tier, amount: pu.amount_kobo, pack: !!o.fromPack, order: !!o.fromOrder });
       await startFirstRound(projectId);
     } else if (pu.sku === 'upgrade') {
       await query("update studio_projects set tier = 'premium', paid_kobo = paid_kobo + $2, credit_kobo = $3 where id = $1", [projectId, pu.amount_kobo, allowanceFor('premium', s).creditKobo]);
@@ -228,13 +228,19 @@ async function topUpDrafts(projectId: string) {
 export async function applyPendingPaid(limit = 20): Promise<number> {
   const rows = await query<Purchase>("select * from studio_purchases where status = 'paid' and applied_at is null and verified_at < now() - interval '1 minute' order by created_at limit $1", [limit]);
   let n = 0;
-  for (const r of rows) { try { await applyPurchase(r, { fromPack: r.method === 'pack' }); n++; } catch (e) { console.error(`[brandit] studio apply ${r.id} failed: ${(e as Error)?.message ?? e}`); } }
+  for (const r of rows) { try { await applyPurchase(r, { fromPack: r.method === 'pack', fromOrder: r.method === 'order' }); n++; } catch (e) { console.error(`[brandit] studio apply ${r.id} failed: ${(e as Error)?.message ?? e}`); } }
   return n;
 }
 
 // ---------- Refunds ----------
 async function sendRefund(pu: Purchase, amountKobo: number): Promise<{ ok: boolean; error?: string }> {
   if (pu.method === 'pack' || amountKobo <= 0) return { ok: true };
+  // A design paid inside an order went back through the order's own payment.
+  if (pu.method === 'order' && pu.order_id) {
+    const { refundPayment } = await import('../payments');
+    const r = await refundPayment(pu.order_id, amountKobo, `studio-${pu.id}`, { reason: 'Studio design could not be made' });
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  }
   if (!paystackOn() && !isDemo()) return { ok: false, error: 'Payments are not set up, so this refund cannot be sent.' };
   if (paystackOn()) {
     const res = await fetch('https://api.paystack.co/refund', {
@@ -274,6 +280,8 @@ export async function refundProject(projectId: string, note: string): Promise<vo
     if (!out.ok) console.error(`[brandit] studio refund ${r.id} failed: ${out.error}`);
   }
   await query("update studio_projects set status = 'archived', paid_kobo = 0 where id = $1 and status <> 'purged'", [projectId]);
+  // A design that was paid for inside an order leaves the print line needing the customer's own file.
+  await (await import('./inOrder')).releasePaidLine(projectId).catch((e) => console.error('[brandit] could not release the order line:', e?.message ?? e));
   const total = rows.reduce((n, r) => n + r.amount_kobo, 0);
   if (total > 0) await notifyRefund(projectId, total, note).catch(() => {});
   else await notifyRefund(projectId, 0, note).catch(() => {});

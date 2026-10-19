@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { query } from '@/lib/db';
 import { requireStaff } from '@/lib/session';
 import { setSetting } from '@/lib/settings';
+import { trail, trailProduct } from '@/lib/trail';
 
 const back = (msg: { e?: string; ok?: string }, hash = '') => {
   revalidatePath('/console/rules');
@@ -49,6 +50,7 @@ export async function saveSettingsAction(fd: FormData) {
   await setSetting('custom_reply_hours', replyHours);
   await setSetting('custom_quote_valid_days', validDays);
   await setSetting('pickup_address', String(fd.get('pickup_address') ?? '').replace(/\s+/g, ' ').trim().slice(0, 200));
+  await trail({ area: 'settings', action: 'delivery_rules', target: 'Delivery & rules', summary: `Saved turnaround and rules (cut-off ${cutoff}, arrive by ${arrive}, ${slots} 24-hour slots a day)` });
   back({ ok: 'Settings saved. They apply to new quotes straight away.' }, '#settings');
 }
 
@@ -59,5 +61,6 @@ export async function saveZoneAction(fd: FormData) {
   const fee = kobo(fd.get('fee'));
   if (areas.length === 0) return back({ e: 'A zone needs at least one area.' }, '#zones');
   await query('update delivery_zones set fee_kobo = $2, eligible_24h = $3, areas = $4, name = $5, provisional = false where id = $1', [id, fee, fd.get('eligible') === 'on', areas, String(fd.get('name') ?? '').trim() || 'Zone']);
+  await trail({ area: 'settings', action: 'zone', target: String(fd.get('name') ?? ''), summary: `Saved delivery zone “${String(fd.get('name') ?? '').trim()}” (fee ₦${(fee / 100).toLocaleString('en-NG')}, ${areas.length} areas)` });
   back({ ok: 'Zone saved.' }, '#zones');
 }

@@ -1,3 +1,4 @@
+import { nameSql } from './lines';
 import { query, one } from './db';
 import { putFile, deleteFile, getFile } from './storage';
 import { processImage, ImageError } from './imageTools';
@@ -51,7 +52,7 @@ export type PendingPhoto = { id: string; rating: number; body: string | null; co
 export async function pendingPhotos(): Promise<PendingPhoto[]> {
   return query<PendingPhoto>(
     `select r.id, r.rating, r.body, o.code, r.created_at, r.photo_public_ok,
-            coalesce((select coalesce(i.label, p.name) from order_items i join products p on p.id = i.product_id where i.order_id = o.id order by i.id limit 1), '') as product
+            coalesce(${nameSql('o')}, '') as product
        from reviews r join orders o on o.id = r.order_id where r.photo_status = 'pending' order by r.created_at limit 50`,
   );
 }

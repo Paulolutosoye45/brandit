@@ -38,8 +38,8 @@ describe('the Render blueprint', () => {
     expect(web.plan).not.toBe('0.5c-512mb');   // too small for the image and PDF checks
   });
 
-  it('lets Vercel reach the database, which it can only do from the internet', () => {
-    expect(db.ipAllowList).toEqual([{ source: '0.0.0.0/0', description: 'Vercel (changing addresses)' }]);
+  it('keeps the database private: only services inside Render can connect', () => {
+    expect(db.ipAllowList).toEqual([]);
     expect(Number(db.diskSizeGB) === 1 || Number(db.diskSizeGB) % 5 === 0).toBe(true);
   });
 

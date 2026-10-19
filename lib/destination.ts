@@ -1,11 +1,11 @@
-import { needsProfile, type Customer } from './identity';
+import type { Customer } from './identity';
 import { safeNext } from './safeNext';
 
-/** Where a person goes right after signing in: finish their details first if we are missing any. */
-export const destination = (c: Pick<Customer, 'name' | 'phone' | 'whatsapp_phone'>, next: string) => {
-  const n = safeNext(next);
-  return needsProfile(c) ? `/welcome?next=${encodeURIComponent(n)}` : n;
-};
+/**
+ * Where a person goes right after signing in: back to where they were. There is no details page in between.
+ * Checkout asks for the name and number it needs, at the moment it needs them.
+ */
+export const destination = (_c: Pick<Customer, 'name' | 'phone' | 'whatsapp_phone'>, next: string) => safeNext(next);
 
 /** Demo only: stand-ins for Google accounts, shown until real Google credentials are set. */
 export const DEMO_GOOGLE = [

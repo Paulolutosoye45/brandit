@@ -1,3 +1,4 @@
+import { NextRequest } from 'next/server';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { envProblems, dbHint, setupPage, isDemoEnv, databaseUrl, dbSsl, dbHost } from '../lib/envcheck';
 import { fatalProblems } from '../lib/setup';
@@ -118,16 +119,19 @@ describe('the "not set up yet" page', () => {
   });
 });
 
+const req = (path: string, headers: Record<string, string> = {}) => new NextRequest(`https://thebrandit.ng${path}`, { headers });
+const basic = (pw: string, user = 'team') => `Basic ${Buffer.from(`${user}:${pw}`).toString('base64')}`;
+
 describe('the middleware', () => {
   it('lets everything through on a site that is set up', () => {
     for (const [k, v] of Object.entries(LIVE)) vi.stubEnv(k, v);
-    const r = middleware();
+    const r = middleware(req('/'));
     expect(r.status).toBe(200);
     expect(r.headers.get('x-middleware-next')).toBe('1');
   });
   it('answers 503 with the page, never a bare 500, when settings are missing', async () => {
     vi.stubEnv('NODE_ENV', 'production'); vi.stubEnv('DEMO_MODE', 'false'); vi.stubEnv('SESSION_SECRET', ''); vi.stubEnv('DATABASE_URL', ''); vi.stubEnv('VERCEL', '1');
-    const r = middleware();
+    const r = middleware(req('/'));
     expect(r.status).toBe(503);
     expect(r.headers.get('retry-after')).toBe('60');
     expect(r.headers.get('cache-control')).toBe('no-store');
@@ -135,6 +139,37 @@ describe('the middleware', () => {
     const body = await r.text();
     expect(body).toContain('SESSION_SECRET');
     expect(body).toContain('DATABASE_URL');
+  });
+  describe('on the private test site (APP_ENV=staging)', () => {
+    const stage = (extra: Record<string, string> = {}) => { for (const [k, v] of Object.entries({ ...LIVE, APP_ENV: 'staging', ...extra })) vi.stubEnv(k, v); };
+    it('tells search engines to stay away, even with no password set', () => {
+      stage();
+      const r = middleware(req('/'));
+      expect(r.status).toBe(200);
+      expect(r.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    });
+    it('asks for the team password on every page, and accepts any user name with the right password', () => {
+      stage({ STAGING_PASSWORD: 'open-sesame-9' });
+      const no = middleware(req('/products'));
+      expect(no.status).toBe(401);
+      expect(no.headers.get('www-authenticate')).toMatch(/^Basic realm=/);
+      expect(middleware(req('/products', { authorization: basic('wrong') })).status).toBe(401);
+      expect(middleware(req('/products', { authorization: 'Basic !!!notbase64' })).status).toBe(401);
+      const yes = middleware(req('/products', { authorization: basic('open-sesame-9', 'anyone') }));
+      expect(yes.status).toBe(200);
+      expect(yes.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    });
+    it('keeps the health check, the Paystack webhook and the scheduled check open, because machines call them', () => {
+      stage({ STAGING_PASSWORD: 'open-sesame-9' });
+      for (const p of ['/api/health', '/api/health/deep', '/api/webhooks/paystack', '/api/cron/sweep', '/api/cron/backup']) expect(middleware(req(p)).status, p).toBe(200);
+      expect(middleware(req('/api/orders')).status).toBe(401);
+    });
+    it('does nothing of this on the real site, even if STAGING_PASSWORD was left in the settings', () => {
+      for (const [k, v] of Object.entries({ ...LIVE, STAGING_PASSWORD: 'x' })) vi.stubEnv(k, v);
+      const r = middleware(req('/'));
+      expect(r.status).toBe(200);
+      expect(r.headers.get('x-robots-tag')).toBeNull();
+    });
   });
   it('skips only the files Next serves by itself', () => {
     expect(config.matcher).toEqual(['/((?!_next/static|_next/image).*)']);

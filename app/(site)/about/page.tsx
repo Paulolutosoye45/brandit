@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { PageHead } from '@/components/Bits';
 import { Logo } from '@/components/Logo';
 import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/business';
 import { listProducts } from '@/lib/catalog';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'About Brandit', description: 'Brandit is a design and print service in Lagos, built so that ordering print is easy on a phone and you always know your price and your delivery time.' };
 
 export default async function About() {
+  const c = await getContact();
   const names = (await listProducts()).map((p) => p.name.toLowerCase());
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] ?? 'print';
   return (
@@ -33,7 +35,7 @@ export default async function About() {
         </section>
         <section className="grid gap-3">
           <h2 className="text-[28px]">Who is behind it</h2>
-          <p>Brandit is run by {SITE.owner}, based in Lagos. When you message us, a person answers, {SITE.hours}.</p>
+          <p>Brandit is run by {SITE.owner}, based in Lagos. When you message us, a person answers, {c.hours}.</p>
         </section>
         <section className="grid gap-3">
           <h2 className="text-[28px]">What we print</h2>

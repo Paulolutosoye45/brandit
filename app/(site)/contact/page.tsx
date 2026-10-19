@@ -2,29 +2,30 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHead } from '@/components/Bits';
 import { getSettings } from '@/lib/settings';
-import { SITE, contact } from '@/lib/site';
+import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/business';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Contact and hours', description: 'How to reach Brandit: WhatsApp, email and opening hours.' };
 
 export default async function Contact() {
-  const c = contact();
+  const c = await getContact();
   const s = await getSettings();
   const today = new Date().toISOString().slice(0, 10);
   const closed = s.holidays.filter((d) => d >= today).slice(0, 4).map((d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', timeZone: 'UTC' }));
   return (
     <>
-      <PageHead title="Contact and hours" sub={`A person answers. ${SITE.hours}.`} />
+      <PageHead title="Contact and hours" sub={`A person answers. ${c.hours}.`} />
       <div className="mx-auto grid max-w-[760px] gap-8 px-5 pb-12">
         {c.whatsapp ? (
           <a href={c.whatsappLink('Hi Brandit, I need some help.')!} className="card grid gap-1 border-ink p-6 hover:bg-paper2">
             <span className="font-display text-[26px] font-extrabold leading-tight">Message us on WhatsApp</span>
-            <span className="text-muted">The fastest way. We reply within {SITE.replyWithin}, {SITE.hours}.</span>
+            <span className="text-muted">The fastest way. We reply within {c.replyWithin}, {c.hours}.</span>
           </a>
         ) : (
           <div className="card grid gap-1 p-6">
-            <span className="font-display text-[26px] font-extrabold leading-tight">We reply within {SITE.replyWithin}</span>
-            <span className="text-muted">{SITE.hours}. Use the buttons below to get help with an order.</span>
+            <span className="font-display text-[26px] font-extrabold leading-tight">We reply within {c.replyWithin}</span>
+            <span className="text-muted">{c.hours}. Use the buttons below to get help with an order.</span>
           </div>
         )}
 
@@ -47,14 +48,15 @@ export default async function Contact() {
 
         <section className="grid gap-3">
           <h2 className="text-[26px]">Opening hours</h2>
-          <p>{SITE.hours}. Closed on Sundays. Messages left outside these hours are answered when we open.</p>
+          <p>{c.hours}. Messages left outside these hours are answered when we open.</p>
           {closed.length > 0 && <p className="text-muted">No printing or deliveries on: {closed.join(', ')}.</p>}
         </section>
 
-        {(c.email || c.address || s.pickup_address) && (
+        {(c.phone || c.email || c.address || s.pickup_address) && (
           <section className="grid gap-3">
             <h2 className="text-[26px]">Other ways</h2>
             <ul className="grid gap-2">
+              {c.phone && <li>Phone: <a className="link" href={`tel:${c.phone.replace(/[^\d+]/g, '')}`}>{c.phone}</a></li>}
               {c.email && <li>Email: <a className="link" href={`mailto:${c.email}`}>{c.email}</a></li>}
               {c.address && <li>Address: {c.address}</li>}
               {s.pickup_address && <li>Pickup point: {s.pickup_address}</li>}

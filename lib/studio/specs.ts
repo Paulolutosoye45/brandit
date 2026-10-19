@@ -79,7 +79,7 @@ export function presetFor(spec: Pick<Spec, 'slug' | 'printWIn' | 'printHIn' | 's
   if (spec.slug === 'id-cards') return 'id';
   if (spec.slug === 'business-cards') return 'card';
   if (spec.slug === 'picture-frames') return 'frame';
-  if (spec.slug === 'branded-t-shirts') return 'shirt';
+  if (spec.slug === 'tees-and-totes' || spec.slug === 'branded-t-shirts') return 'shirt';
   if (spec.shape === 'round') return 'round';
   const r = spec.printWIn / spec.printHIn;
   if (r >= 1.25) return 'wide';

@@ -90,8 +90,16 @@ describe('draft, upload and checkout', () => {
     expect(o.promise_reasons).toContain('ZONE');
   });
   it('rejects a quantity with no price instead of guessing', async () => {
+    // Below the smallest order, and above the largest one taken online: no price, so no order.
+    expect((await orders.createDraft({ slug: 'business-cards', quantity: 20 }) as any).error).toBeTruthy();
+    expect((await orders.createDraft({ slug: 'business-cards', quantity: 9000 }) as any).error).toBeTruthy();
+  });
+  it('prices a quantity between two steps at the per-piece price of the step below', async () => {
     const d: any = await orders.createDraft({ slug: 'business-cards', quantity: 150 });
-    expect(d.error).toBeTruthy();
+    expect(d.error).toBeFalsy();
+    const o = (await orders.getOrder(d.id))!;
+    // 100 cards are ₦15,000, so ₦150 a card; 150 cards are ₦22,500, which is below the next step.
+    expect(o.subtotal_kobo).toBe(2_250_000);
   });
   it('stops a blurry logo, keeps it off the order, and says why in plain words', async () => {
     const d: any = await orders.createDraft({ slug: 'business-cards', quantity: 100 });

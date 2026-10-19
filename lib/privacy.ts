@@ -3,10 +3,11 @@ import { deleteFile } from './storage';
 import { eraseBrandKit, dropUnusedFiles } from './brandKit';
 import { eraseReviewPhotosFor } from './reviewPhotos';
 import { exportStudio, eraseStudio } from './studio/privacy';
+import { handOverOnDelete } from './businessAccounts';
 
 /** Everything we hold about a customer, in a form they can keep. */
 export async function exportData(customerId: string) {
-  const c = await one<any>('select id, name, email, email_verified, phone, whatsapp_phone, account_type, default_area, marketing_opt_in, nudge_ok, lang, created_at, last_sign_in_at, business_id from customers where id = $1', [customerId]);
+  const c = await one<any>('select id, name, email, email_verified, phone, whatsapp_phone, account_type, default_area, marketing_opt_in, nudge_ok, reminders_ok, lang, created_at, last_sign_in_at, business_id from customers where id = $1', [customerId]);
   if (!c) return null;
   const business = c.business_id ? await one<any>('select name, tax_id from businesses where id = $1', [c.business_id]) : null;
   const orders = await query<any>(
@@ -35,11 +36,14 @@ export async function exportData(customerId: string) {
   const referrals = await query<any>(
     `select r.amount_kobo, r.created_at, cp.code as reward_code from referral_rewards r left join coupons cp on cp.id = r.reward_coupon_id where r.referrer_id = $1 order by r.created_at`, [customerId]);
   const studio = await exportStudio(customerId).catch(() => null);
+  const reminders = await query<any>("select kind, weekday, next_at, active, last_sent_at, sent_count, created_at from reminders where customer_id = $1 order by created_at", [customerId]);
+  const nameLists = await query<any>(
+    `select o.code, i.names from order_items i join orders o on o.id = i.order_id where o.customer_id = $1 and i.names is not null order by o.created_at`, [customerId]);
   const { business_id: _b, ...profile } = c;
   return {
     exported_at: new Date().toISOString(), note: 'Everything Brandit holds about you. Amounts are in kobo (100 kobo = 1 naira).',
     profile, business, orders, custom_requests: customRequests, coupons_used: couponUses, reviews, problem_reports: claims, sign_ins: signIns,
-    brand_kit: brandKit, brand_files: brandFiles, my_codes: myCodes, referral_rewards: referrals, studio,
+    brand_kit: brandKit, brand_files: brandFiles, my_codes: myCodes, referral_rewards: referrals, reminders, name_lists: nameLists, studio,
   };
 }
 
@@ -71,10 +75,17 @@ export async function deleteAccount(customerId: string): Promise<DeleteResult> {
     await q.query("update messages set to_phone = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
     await q.query("update reviews set body = null, public_ok = false, featured = false where order_id in (select id from orders where customer_id = $1)", [customerId]);
     await q.query("update deliveries set last_lat = null, last_lng = null, last_accuracy_m = null, last_ping_at = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
+    // A company the person owns passes to the member who has been there longest.
+    await handOverOnDelete(q, customerId);
     await q.query("update coupons set owner_customer_id = null, active = false where owner_customer_id = $1", [customerId]);
     await q.query("update claims set description = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
     // What a customer typed into a design brief (names, numbers on a card) goes with them.
     await q.query("update order_items set design_brief = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
+    // Lists of names printed on cards and shirts, the note to whoever paid, who paid, and the repeat reminders.
+    await q.query("update order_items set names = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
+    await q.query("update orders set pay_note = null where customer_id = $1", [customerId]);
+    await q.query("update payments set payer_name = null, payer_email = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
+    await q.query("delete from reminders where customer_id = $1", [customerId]);
     // Custom requests: the person and everything they wrote go. Our prices stay for the accounts. Open ones are closed.
     await q.query(
       `update custom_requests set name = 'Deleted customer', phone = 'deleted', email = null, title = 'Deleted request', details = 'Deleted at the customer''s request.',
@@ -90,7 +101,7 @@ export async function deleteAccount(customerId: string): Promise<DeleteResult> {
     await q.query('delete from sign_ins where customer_id = $1', [customerId]);
     await q.query(
       `update customers set name = 'Deleted customer', email = null, email_verified = false, phone = null, whatsapp_phone = null, google_sub = null,
-         avatar_url = null, default_area = null, marketing_opt_in = false, business_id = null, profile_completed_at = null where id = $1`, [customerId]);
+         avatar_url = null, default_area = null, marketing_opt_in = false, business_id = null, business_role = null, profile_completed_at = null where id = $1`, [customerId]);
   });
   // The stored files go last, after the records no longer point at them. A failure here leaves nothing identifiable behind.
   await eraseStudio(customerId).catch((e) => console.error('[brandit] studio erase failed:', e?.message ?? e));

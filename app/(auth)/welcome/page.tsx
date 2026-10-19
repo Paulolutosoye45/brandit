@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireCustomer } from '@/lib/session';
-import { contactPhone, needsProfile } from '@/lib/identity';
+import { contactPhone } from '@/lib/identity';
 import { listZones } from '@/lib/catalog';
 import { one } from '@/lib/db';
 import { safeNext } from '@/lib/safeNext';
@@ -16,7 +16,8 @@ export default async function Welcome(props: { searchParams: Promise<{ next?: st
   const next = safeNext(searchParams.next);
   const c = await requireCustomer(`/welcome${searchParams.next ? `?next=${encodeURIComponent(searchParams.next)}` : ''}`);
   const editing = searchParams.edit === '1';
-  if (!editing && !needsProfile(c)) redirect(next);
+  // Nobody is sent here after signing in any more. The page is only for editing details from the account page.
+  if (!editing) redirect(next);
   const zones = await listZones();
   const company = c.business_id ? (await one<{ name: string }>('select name from businesses where id = $1', [c.business_id]))?.name ?? '' : '';
   return (

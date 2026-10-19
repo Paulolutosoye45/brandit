@@ -98,20 +98,23 @@ export async function addPress(name: string, isPartner: boolean): Promise<Result
 }
 
 /**
- * In live mode, make sure someone can sign in to the console. ADMIN_EMAIL and ADMIN_PIN create the first admin
- * if there is no active admin, whether the database is brand new or was seeded before those were set.
+ * In live mode, make sure the owner can sign in to the console. ADMIN_EMAIL and ADMIN_PIN create that admin if the
+ * address is not already an active admin, whether the database is brand new, was seeded before those were set, or holds
+ * other admins (for example demo ones). An existing admin's PIN is never changed from here: changing ADMIN_PIN later does
+ * nothing, so a PIN changed in the console is not undone by a redeploy. To reset a forgotten PIN: npm run admin -- set.
  */
 export async function ensureAdmin(env: NodeJS.ProcessEnv = process.env, db?: { query: Q['query'] }): Promise<'created' | 'present' | 'skipped' | 'weak-pin'> {
   // At startup the caller passes the connection it already holds. Asking the shared one would wait on startup itself.
   const run = db ? db.query.bind(db) : query;
   if (!env.ADMIN_EMAIL || !env.ADMIN_PIN) return 'skipped';
   if (validatePin(env.ADMIN_PIN)) return 'weak-pin';
-  const have = (await run<{ n: number }>("select count(*)::int as n from staff where role = 'admin' and active", []))[0]?.n ?? 0;
+  const email = env.ADMIN_EMAIL.trim().toLowerCase();
+  const have = (await run<{ n: number }>("select count(*)::int as n from staff where email = $1 and role = 'admin' and active", [email]))[0]?.n ?? 0;
   if (have > 0) return 'present';
   await run(
     `insert into staff (email, name, role, pin_hash) values ($1,'Admin','admin',$2)
      on conflict (email) do update set role = 'admin', active = true, pin_hash = excluded.pin_hash`,
-    [env.ADMIN_EMAIL.trim().toLowerCase(), hashPin(env.ADMIN_PIN)],
+    [email, hashPin(env.ADMIN_PIN)],
   );
   return 'created';
 }

@@ -5,14 +5,14 @@ import { getSettings } from '@/lib/settings';
 import { naira } from '@/lib/money';
 import { clock12, toMinutes } from '@/lib/time';
 import { PageHead } from '@/components/Bits';
-import { SITE, contact } from '@/lib/site';
+import { getContact } from '@/lib/business';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Delivery and pickup', description: 'Where Brandit delivers in Lagos, what it costs, how long it takes, and how pickup works.' };
 
 export default async function Delivery() {
   const [zones, s] = await Promise.all([listZones(), getSettings()]);
-  const c = contact();
+  const c = await getContact();
   const t = (hhmm: string) => clock12(Math.floor(toMinutes(hhmm) / 60), toMinutes(hhmm) % 60);
   return (
     <>
@@ -56,7 +56,7 @@ export default async function Delivery() {
             <li>Check your parcel, then give the rider your delivery code. Only give the code once you have your parcel.</li>
             <li>If something is wrong, <Link className="link" href="/legal/refunds">report it within {s.claim_window_hours} hours</Link>.</li>
           </ol>
-          <p className="text-muted">Please make sure someone can receive the parcel and that your phone is on. A good landmark helps our rider a lot. We are available {SITE.hours}.</p>
+          <p className="text-muted">Please make sure someone can receive the parcel and that your phone is on. A good landmark helps our rider a lot. We are available {c.hours}.</p>
         </section>
       </div>
     </>

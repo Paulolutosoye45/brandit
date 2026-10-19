@@ -1,6 +1,6 @@
 import { query, one, tx } from './db';
 import { MAX_QUANTITY } from './pricing';
-import type { CheckClass, ExtraPer, OptionChoice, PricingMode, ProductOption, SizeOption } from './types';
+import type { CheckClass, PricingMode, SizeOption } from './types';
 
 /*
  * Everything the console does to the catalogue. Plain functions that check their input and throw
@@ -9,8 +9,6 @@ import type { CheckClass, ExtraPer, OptionChoice, PricingMode, ProductOption, Si
 export class ProductError extends Error {}
 
 export const RESERVED_SLUGS = ['custom-order', 'new'];
-const MAX_OPTIONS = 4;
-const MAX_CHOICES = 12;
 const MAX_SIZES = 12;
 const MAX_TIERS = 12;
 export const MAX_IMAGES = 8;
@@ -53,7 +51,7 @@ export async function createProduct(i: NewProduct): Promise<{ id: string; slug: 
   return { id: created, slug };
 }
 
-export type Details = { name: string; category: string; blurb: string; description: string; highlights: string; allow_custom: boolean; check_class: string; print_w_in: string; print_h_in: string };
+export type Details = { name: string; category: string; blurb: string; description: string; highlights: string; allow_custom: boolean; personalise?: boolean; check_class: string; print_w_in: string; print_h_in: string };
 
 export async function saveDetails(id: string, d: Details) {
   const name = clean(d.name, 60);
@@ -65,66 +63,27 @@ export async function saveDetails(id: string, d: Details) {
   if ((w == null) !== (h == null)) throw new ProductError('Give both the width and the height of the print, or leave both empty.');
   const highlights = cleanBlock(d.highlights, 1200).split('\n').map((x) => clean(x, 90)).filter(Boolean).slice(0, 8);
   const r = await query(
-    `update products set name = $2, category = $3, blurb = $4, description = $5, highlights = $6, allow_custom = $7, check_class = $8, print_w_in = $9, print_h_in = $10 where id = $1 and not system returning id`,
-    [id, name, clean(d.category, 40), clean(d.blurb, 160), cleanBlock(d.description, 4000), highlights, !!d.allow_custom, cls, w, h],
+    `update products set name = $2, category = $3, blurb = $4, description = $5, highlights = $6, allow_custom = $7, check_class = $8, print_w_in = $9, print_h_in = $10, personalise = $11 where id = $1 and not system returning id`,
+    [id, name, clean(d.category, 40), clean(d.blurb, 160), cleanBlock(d.description, 4000), highlights, !!d.allow_custom, cls, w, h, !!d.personalise],
   );
   if (!r.length) throw new ProductError('We could not find that product.');
-}
-
-// ---------- Options ----------
-type OptionIn = { key?: string; label: string; help?: string; default?: string; defaultIndex?: number; choices: { value?: string; label: string; extra?: string; per?: string }[] };
-
-export function cleanOptions(input: unknown, mode: PricingMode): ProductOption[] {
-  if (!Array.isArray(input)) throw new ProductError('The options could not be read. Reload the page and try again.');
-  if (input.length > MAX_OPTIONS) throw new ProductError(`A product can have up to ${MAX_OPTIONS} options.`);
-  const keys = new Set<string>();
-  const out: ProductOption[] = [];
-  for (const raw of input as OptionIn[]) {
-    const label = clean(raw?.label, 40);
-    if (!label) throw new ProductError('Every option needs a name, such as "Finish" or "Paper".');
-    const key = raw.key && !keys.has(raw.key) && /^[a-z0-9-]{1,48}$/.test(raw.key) ? (keys.add(raw.key), raw.key) : uniqueKey(label, keys, 'option');
-    const vals = new Set<string>();
-    const choices: OptionChoice[] = [];
-    let defaultFromIndex: string | undefined;
-    for (const [srcIdx, c] of (raw.choices ?? []).entries()) {
-      const cl = clean(c?.label, 40);
-      if (!cl) continue;
-      const value = c.value && !vals.has(c.value) && /^[a-z0-9-]{1,48}$/.test(c.value) ? (vals.add(c.value), c.value) : uniqueKey(cl, vals, 'choice');
-      const extraNaira = c.extra === undefined || c.extra === '' ? 0 : Number(String(c.extra).replace(/[^\d.]/g, ''));
-      if (!(extraNaira >= 0 && extraNaira <= 10_000_000)) throw new ProductError(`The extra price for "${cl}" must be an amount in naira, like 2000.`);
-      const choice: OptionChoice = { value, label: cl };
-      if (extraNaira > 0) {
-        const per = (['order', 'piece', 'sqft'] as ExtraPer[]).includes(c.per as ExtraPer) ? (c.per as ExtraPer) : 'order';
-        if (per === 'sqft' && mode !== 'area') throw new ProductError(`"Per square foot" extras only make sense for products priced by the square foot ("${cl}").`);
-        choice.extra_kobo = Math.round(extraNaira * 100);
-        choice.extra_per = per;
-      }
-      choices.push(choice);
-      if (srcIdx === raw.defaultIndex) defaultFromIndex = value;
-    }
-    if (choices.length > MAX_CHOICES) throw new ProductError(`"${label}" has more than ${MAX_CHOICES} choices.`);
-    if (choices.length < 2) throw new ProductError(`"${label}" needs at least two choices. An option with one choice is not a choice.`);
-    const def = defaultFromIndex ?? choices.find((c) => c.value === raw.default)?.value ?? choices[0].value;
-    const help = clean(raw.help, 120);
-    out.push({ key, label, default: def, choices, ...(help ? { help } : {}) });
-  }
-  return out;
-}
-
-export async function saveOptions(id: string, input: unknown) {
-  const p = await one<{ pricing_mode: PricingMode }>('select pricing_mode from products where id = $1 and not system', [id]);
-  if (!p) throw new ProductError('We could not find that product.');
-  const options = cleanOptions(input, p.pricing_mode);
-  await query('update products set options = $2 where id = $1', [id, JSON.stringify(options)]);
 }
 
 // ---------- Prices ----------
 const kobo = (v: unknown) => Math.round(Number(String(v ?? '').replace(/[^\d.]/g, '')) * 100);
 
+
+/** A product with several price tables is priced in the price grid; these simple savers are for products with one table. */
+async function onlyOneTable(id: string) {
+  const p = await one<{ options: any[] }>('select options from products where id = $1 and not system', [id]);
+  if (p && (p.options ?? []).some((o) => o.drives)) throw new ProductError('This product has several price tables. Use the price grid to change its prices.');
+}
+
 export type TierRow = { quantity: string | number; price: string | number };
 export async function saveTierPrices(id: string, rows: unknown) {
   const p = await one<{ pricing_mode: PricingMode }>('select pricing_mode from products where id = $1 and not system', [id]);
   if (!p || p.pricing_mode !== 'tier') throw new ProductError('This product is not priced by quantity.');
+  await onlyOneTable(id);
   if (!Array.isArray(rows)) throw new ProductError('The prices could not be read. Reload the page and try again.');
   if (rows.length > MAX_TIERS) throw new ProductError(`Up to ${MAX_TIERS} quantity steps are allowed.`);
   const seen = new Set<number>();
@@ -150,6 +109,7 @@ export async function saveTierPrices(id: string, rows: unknown) {
 export async function saveAreaPrice(id: string, rate: unknown, minArea: unknown) {
   const p = await one<{ pricing_mode: PricingMode }>('select pricing_mode from products where id = $1 and not system', [id]);
   if (!p || p.pricing_mode !== 'area') throw new ProductError('This product is not priced by the square foot.');
+  await onlyOneTable(id);
   const r = kobo(rate);
   if (!(r > 0)) throw new ProductError('Add a price per square foot. It must be more than zero.');
   const m = String(minArea ?? '').trim() === '' ? 0 : Number(minArea);
@@ -165,6 +125,7 @@ export type SizeRow = { key?: string; label: string; w_in: string | number; h_in
 export async function saveSizes(id: string, rows: unknown) {
   const p = await one<{ pricing_mode: PricingMode }>('select pricing_mode from products where id = $1 and not system', [id]);
   if (!p || p.pricing_mode !== 'size') throw new ProductError('This product is not priced by size.');
+  await onlyOneTable(id);
   if (!Array.isArray(rows) || rows.length === 0) throw new ProductError('Add at least one size.');
   if (rows.length > MAX_SIZES) throw new ProductError(`Up to ${MAX_SIZES} sizes are allowed.`);
   const keys = new Set<string>();
@@ -212,7 +173,7 @@ export async function readiness(id: string): Promise<Readiness> {
   if (!p) return { ready: false, missing: ['This product no longer exists.'], tips: [] };
   const missing: string[] = [];
   const tips: string[] = [];
-  const prices = await one<{ n: number }>('select count(*)::int as n from price_rules where product_id = $1 and active', [id]);
+  const prices = await one<{ n: number }>('select count(*)::int as n from price_rules where product_id = $1 and active and (price_kobo is not null or rate_per_sqft_kobo is not null)', [id]);
   if (!p.name?.trim()) missing.push('A name');
   if (!p.blurb?.trim()) missing.push('A short description (one line for the product card)');
   if (!prices?.n) missing.push(p.pricing_mode === 'tier' ? 'At least one quantity with a price' : p.pricing_mode === 'size' ? 'At least one size with a price' : 'A price per square foot');

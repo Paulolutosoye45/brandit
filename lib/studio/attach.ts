@@ -6,6 +6,7 @@ import { getFile, putFile } from '../storage';
 import type { Customer } from '../identity';
 import { audit, getProject, getVersion, ownProject, readyToOrder, type Fail, type Ok } from './projects';
 import { ensureCredit, resumeCredit } from './purchases';
+import { lineOf } from './inOrder';
 import type { Spec } from './specs';
 
 /*
@@ -22,6 +23,8 @@ const REASON: Record<string, string> = {
 export async function startOrder(c: Customer, projectId: string, o: { quantity?: number } = {}): Promise<Ok<{ orderId: string; next: string; creditCode: string | null; couponMessage?: string }> | Fail> {
   const p = await ownProject(c, projectId);
   if (!p) return { ok: false, error: 'We could not find that design.' };
+  const onLine = await lineOf(p.id);
+  if (onLine && !['draft', 'awaiting_payment'].includes(onLine.orderStatus)) return { ok: false, error: `This design is already part of order ${onLine.orderCode}. It goes to print as soon as it is approved, so there is nothing more to order.`, code: 'on_order' };
   const ready = await readyToOrder(p);
   if (!ready.ok) return { ok: false, error: REASON[ready.reason] ?? 'This design cannot be ordered yet.', code: ready.reason };
   const v = p.approved_version_id ? await getVersion(p.approved_version_id) : null;
@@ -53,7 +56,7 @@ export async function startOrder(c: Customer, projectId: string, o: { quantity?:
     if ('error' in d) return { ok: false, error: d.error };
     orderId = d.id;
   } else {
-    await query('update order_items set quantity = $2 where order_id = $1', [orderId, qty]);
+    await query('update order_items set quantity = $2 where id = $1', [(await getItem(orderId))!.id, qty]);
   }
   const item = (await getItem(orderId))!;
   const key = await putFile(file, v.final_mime === 'image/png' ? 'png' : 'jpg');

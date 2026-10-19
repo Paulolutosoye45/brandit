@@ -15,7 +15,7 @@ Prices are from vendor and comparison sites in August and September 2026. Check 
 
 ## Path A: Render, R2 and Cloudflare
 
-You will have: the site and the late-order check on one Render web service (Frankfurt), a Render Postgres database (Frankfurt; set `ipAllowList: []` in `render.yaml` to keep it private, see step 8), artwork files in a private Cloudflare R2 bucket, and Cloudflare handling your domain.
+You will have: the site and the late-order check on one Render web service (Frankfurt), a Render Postgres database (Frankfurt, private: only the web service can reach it, see step 8), artwork files in a private Cloudflare R2 bucket, and Cloudflare handling your domain.
 
 | Part | Plan | About a month |
 | --- | --- | --- |
@@ -60,9 +60,12 @@ Behind Cloudflare's free plan, a single upload cannot be larger than 100 MB. Bra
 
 **8. Backups and watching it.**
 
-- Open the database in Render and look at **Recovery** to see which backups your plan keeps and for how long. Before launch, restore one into a new test database to prove it works.
-- For a site on Render, the database should accept connections only from inside Render: set `ipAllowList: []` in `render.yaml` (this package ships it open, for Vercel; see Path D). To take a manual copy or run a query from your own computer, add your public IP address in the database's **Networking** section, use the **External** connection string, and remove the address afterwards. `./scripts/backup.sh` needs `DATABASE_URL` set to that external string.
-- Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health`, with an alert that texts you if it stops answering. Check for the text `"ok":true`.
+- **Brandit backs itself up.** Every night at about 2am Lagos time it copies the whole database into your R2 bucket (under `backups/`), reads the copy back to prove it is whole, and keeps the last 14 nights and the last 12 months. Once a month it rebuilds the newest copy in a throw-away database and checks every row and every naira. Console, **Setup**, **Backups** shows the result in plain words, and **Back up now** and **Test a restore** do it on demand. This is independent of Render, so it still works if you ever move host. **Keep the bucket private** (do not switch on a public or r2.dev address): the backups hold customer details.
+- Render's own database backups are a second layer. Open the database in Render, look at **Recovery**, and see which backups your plan keeps and for how long.
+- **Practise a restore once, before launch.** Make an empty test database in Render, copy its **External** address, and from your computer run `npm run restore -- --list`, then `npm run restore -- backups/daily/<date>.json.gz --check` (rebuilds it in memory and checks it), then the same with `--into "<the test database address>" --yes`. Do it again whenever you change host. The steps for a real emergency are under "Looking after it".
+- On Render the database accepts connections only from inside Render: `render.yaml` sets `ipAllowList: []`. (If you host on Vercel instead, Path D, it has to be opened to everyone.) To take a manual copy or run a query from your own computer, add your public IP address in the database's **Networking** section, use the **External** connection string, and remove the address afterwards.
+- **Be told when it breaks.** Set `ALERT_PHONE` to your own number (with the country code) and have SMS or WhatsApp set up. The site then messages you, at most once every 30 minutes for the same problem, when: Paystack reports a payment we could not match to an order, the database stops answering for two minutes (and again when it is back), the nightly backup or the monthly restore test fails, or the five-minute checks fail. Press **Send a test alert** on the Setup page to see one arrive. Errors also go to Sentry.
+- **Is it up?** Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health`, with an alert that texts you if it stops answering. Check for the text `"ok":true`. Free monitors look every 3 to 5 minutes; checking every minute needs a paid plan. Render also checks `/api/health` itself and will not send visitors to a version that fails it.
 - In Render, turn on email or Slack notifications for failed deploys.
 
 **9. If something goes wrong.**
@@ -117,7 +120,7 @@ You know it worked when the log shows a line starting `[brandit] LIVE` and `http
 Read the limits first. **Uploads are capped at 4 MB** on Vercel (the platform refuses any request over about 4.5 MB, and Brandit's customers upload print artwork that is often larger). **Brandit Studio's picture jobs can stall**, because Vercel pauses a server copy as soon as it has replied. **The free (Hobby) plan allows scheduled checks only once a day**, and Brandit's late-order check runs every five minutes. For a site taking real print orders, use Path A. Use Vercel to try the site, or for jobs with small files.
 
 **1. A database Vercel can reach.** Vercel has no disk that keeps files, so the built-in database cannot run. You need a hosted Postgres.
-- On Render, open the database and copy the **External Database URL**. Its host ends in `.render.com`. The **Internal** URL (a host like `dpg-abc123-a`) only works for services running inside Render and gives a 500 from Vercel. In the database's **Info** page, under **Networking**, allow connections from anywhere (`0.0.0.0/0`), because Vercel connects from changing addresses. If the database was made by the Render Blueprint, `render.yaml` sets this rule every time the Blueprint syncs: this package's `render.yaml` already allows it, but an older copy (with `ipAllowList: []`) locks Vercel out again, and the log then says the connection timed out.
+- On Render, open the database and copy the **External Database URL**. Its host ends in `.render.com`. The **Internal** URL (a host like `dpg-abc123-a`) only works for services running inside Render and gives a 500 from Vercel. In the database's **Info** page, under **Networking**, allow connections from anywhere (`0.0.0.0/0`), because Vercel connects from changing addresses. If the database was made by the Render Blueprint, `render.yaml` sets this rule every time the Blueprint syncs, and this package's `render.yaml` keeps the database private (`ipAllowList: []`), which locks Vercel out: the log then says the connection timed out. To stay on Vercel, change that line to `ipAllowList: [{source: 0.0.0.0/0, description: Vercel}]` before you sync the Blueprint, or set the rule by hand in the database's Networking section and never sync the Blueprint.
 - On Neon or Supabase, use the direct connection or the session-mode address, not a transaction pooler. Brandit uses database locks that a transaction pooler breaks.
 - Put the database in Frankfurt to match `vercel.json` (`"regions": ["fra1"]`). If yours is elsewhere, change that region to the nearest Vercel region, or every page waits on a long trip to the database.
 
@@ -158,6 +161,18 @@ Optional: `DATABASE_POOL_MAX` (connections each server copy may open; default 4 
 | Uploads of big files are refused | Expected on Vercel: the limit is 4 MB. See the top of this section. |
 | The deploy fails on the cron line | Free plan: see step 6. |
 
+**Team sign-in and the admin PIN.** The first time the site starts with `ADMIN_EMAIL` and `ADMIN_PIN` set, it creates that admin. The PIN is stored scrambled, so nobody can read it back, and changing `ADMIN_PIN` afterwards does nothing (so a PIN you change in the console is never undone by a redeploy). A PIN is 6 to 12 digits, not one digit repeated and not a run like `123456`; a weaker one creates no admin, and the sign-in page then says that no team account exists. On a live site, demo accounts (`...@brandit.test`, PIN 1234) are switched off automatically.
+
+To see who can sign in, or to set a forgotten PIN, run these from the project folder on your computer (after `npm install`), with `DATABASE_URL` set to the External URL as in the test below:
+
+```
+npm run admin -- list
+npm run admin -- set you@example.com 482915
+npm run admin -- disable-demo
+```
+
+**Looking at your data.** If the site runs on Render, the database is private, so first let your own computer in for a while: open the database in Render, **Networking** (or **Info**), add your public IP address (search "what is my IP" on Google) and save. Install a free database app such as Beekeeper Studio, DBeaver or pgAdmin, start a new PostgreSQL connection, and paste the External URL (turn on SSL if the app asks). When you are done, remove your address again. (Re-syncing the Blueprint also resets this list to private.) Your orders, customers and products are in the tables of the same names. Read freely, but make changes through the console: the console also updates the records that depend on them.
+
 **Testing a database address.** From the project folder on your computer (after `npm install`), in PowerShell:
 
 ```
@@ -166,6 +181,48 @@ node -e "const {Client}=require('pg');const c=new Client({connectionString:proce
 ```
 
 `WORKS` means the database and the address are fine, so the problem is the value saved in Vercel (or a missing redeploy). On macOS or Linux, write `export DATABASE_URL="..."` instead of the first line.
+
+## A private test copy (staging)
+
+Try every change on a second copy of the site before customers see it. It has its own database and its own file bucket, takes Paystack **test** payments, tells search engines to stay away, shows a "Test site" bar on every page and asks for a team password. It cannot text a real person, because it has no SMS or WhatsApp keys.
+
+1. Make a second bucket (for example `brandit-staging-files`) and token, as in Path A step 2.
+2. In your Git repository make a branch called `staging`.
+3. In Render choose **New, Blueprint**, pick the repository, set the branch to `staging` and the Blueprint file path to `render.staging.yaml`. Render asks for `STAGING_PASSWORD` (your team types it, with any user name), `NEXT_PUBLIC_APP_URL` (for example `https://staging.yourdomain.ng`), an admin email and a different PIN, the new bucket's four values, and your Paystack **test** secret key (`sk_test_...`).
+4. Point a `CNAME` for `staging` at the address Render shows, and set Paystack's **Test** webhook to `https://staging.yourdomain.ng/api/webhooks/paystack`.
+5. Merge into `staging` to deploy there; when it looks right, merge into `main` to deploy the real site. The Setup page turns red if a live Paystack key is on the test copy, or a test key on the real site.
+
+Suspend the test copy in the Render dashboard when nobody is testing; a suspended service is not charged.
+
+## After every deploy: the smoke test
+
+On your computer, in the project folder (after `npm install`):
+
+```
+npm run smoke -- https://yourdomain.ng
+npm run smoke -- https://staging.yourdomain.ng --staging --password <the team password>
+```
+
+It asks the site ten quick questions a person would otherwise click through: health and database, home page, safety headers, https redirect, sitemap, robots.txt, a product page, a price quote, the "not found" page, the console sign-in and the customer sign-in page. It places no order and signs nobody in. Every line should say PASS; WARN is worth reading; any FAIL means do not announce the site yet. Add `--allow-demo` to try it against a copy on your own computer.
+
+**Can it do its job?** Add `--deep` and the site's `CRON_SECRET` and the smoke test also asks the site to prove it:
+
+```
+npm run smoke -- https://yourdomain.ng --deep --cron-secret <CRON_SECRET>
+npm run smoke -- https://yourdomain.ng --deep --cron-secret <CRON_SECRET> --full --email you@example.com
+```
+
+(`CRON_SECRET` is in Render, on the service's **Environment** tab; the Blueprint made one for you.)
+
+The first saves a file in the bucket and reads it back, asks Paystack whether the key works, and checks the newest backup is under 26 hours old and the late-order check ran in the last 15 minutes. It changes nothing. The second (`--full`) also starts one N100 Paystack payment and leaves it unpaid (one "abandoned" N100 entry appears in Paystack, which proves the account can take payments), and `--email` sends one real email and waits for Resend to say whether it arrived. (A Resend key made with "Sending access" cannot read the answer; the check then says it cannot tell and you look in the inbox.) The same buttons are on the Setup page under **Test the connections**.
+
+**Does it still look right on a phone?** Most customers arrive on a phone. On your computer, once: `npm install --no-save playwright` then `npx playwright install chromium`. Then:
+
+```
+npm run shots -- https://staging.yourdomain.ng --password <the team password>
+```
+
+It photographs 20 or so important pages at 390 pixels wide, compares each with the last good picture, fails any page that scrolls sideways, and writes `shots/<site>/report.html` with before, now and what changed in red. The first run saves the starting pictures. Run it before and after a change to the test copy; when what you see is what you meant, run it again with `--update` to accept it. (Text that changes by itself, such as an arrival time, can make a tiny difference; up to half a percent of the screen is ignored.)
 
 ## The accounts you need (all paths)
 
@@ -178,7 +235,8 @@ node -e "const {Client}=require('pg');const c=new Client({connectionString:proce
 | WhatsApp order messages | Meta WhatsApp Business Platform: verify the business, submit the message templates in `content/messages.ts`. Takes days. Until then SMS covers it. | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` |
 | The "talk to a person" button | Your business WhatsApp number, with country code and no plus. | `NEXT_PUBLIC_WHATSAPP` |
 | Contact page and legal pages | A support email and a business address, if you want them shown. Optional. | `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_BUSINESS_ADDRESS` |
-| Late-job alerts | Your production lead's number. | `ALERT_PHONE` |
+| Alerts to your phone | Your own number, with the country code. Texted when a job is at risk of being late, a payment cannot be matched to an order, the database stops answering, or a backup fails. Needs SMS or WhatsApp set up. | `ALERT_PHONE` |
+| Error alerts | [Sentry](https://sentry.io): a free Node.js project, then Project settings, Client Keys, DSN. | `SENTRY_DSN` |
 | Brandit Studio (AI designs) | Optional. At least one picture maker, or Studio stays closed: [Recraft](https://www.recraft.ai) (sketches, Standard, cut-outs, vectors), [Black Forest Labs](https://docs.bfl.ai) (FLUX), [Google AI Studio](https://aistudio.google.com) (Gemini image), [OpenAI](https://platform.openai.com) (Premium fallback and the image-safety check), [fal.ai](https://fal.ai) (Topaz enlarger). Set a spending limit on every vendor account as well as in the console. | `RECRAFT_API_KEY`, `BFL_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `FAL_KEY` |
 
 You can launch with Paystack, a database, and any one of Google, email or SMS. The others can follow.
@@ -215,9 +273,11 @@ You can launch with Paystack, a database, and any one of Google, email or SMS. T
 
 - **Updating on Render.** Push your changes to the Git repository. Render builds and deploys by itself, and keeps serving the old version until the new one passes the health check. If a deploy goes wrong, Render's **Rollbacks** puts the previous version back.
 - **Updating on a Docker server.** Copy the new code over the old, then `docker compose up -d --build`. The database updates itself on start.
-- **Backups.** Render: see Path A, step 8. Docker server: run `./scripts/backup.sh` every night (`crontab -e`, then `0 2 * * * cd /path/to/brandit && ./scripts/backup.sh`) and copy the `backups/` folder somewhere off the server. A backup that lives only on the same server is not a backup.
-- **Restoring on a Docker server.** `gunzip -c backups/brandit-db-<stamp>.sql.gz | docker compose exec -T db psql -U brandit brandit`
-- **Is it up?** Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health` and have it text you.
+- **Backups.** Brandit copies the database to your bucket every night by itself (Path A, step 8); the Setup page shows the newest copy and the last restore test. On a Docker server the old `./scripts/backup.sh` (a full `pg_dump` plus the artwork files) is still a good second copy: run it every night (`crontab -e`, then `0 2 * * * cd /path/to/brandit && ./scripts/backup.sh`) and copy the `backups/` folder somewhere off the server. A backup that lives only on the same server is not a backup. The artwork files themselves live in the bucket; switch on versioning or a second copy there if you want protection against deleting a file by mistake.
+- **Restoring after a disaster.** The calm order: (1) make a new empty Postgres database and copy its **External** address; (2) on your computer set the bucket values (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) and run `npm run restore -- --list` to see the copies; (3) run `npm run restore -- backups/daily/<date>.json.gz --check` to prove the copy is whole; (4) run `npm run restore -- backups/daily/<date>.json.gz --into "<new database address>" --yes`, which creates the tables and loads everything in one all-or-nothing step, checks every link between tables and the money, and carries the order numbers on; (5) in Render set `DATABASE_URL` to the new database's **Internal** address and redeploy; (6) run `npm run smoke -- https://yourdomain.ng --deep --cron-secret <CRON_SECRET>`. You lose at most the orders since the last backup; Paystack's dashboard lists any payments in that gap so they can be matched by hand. `npm run backup` takes a backup from your computer, for example before a risky change. If the bucket itself is lost, use Render's own recovery (Path A, step 8) or the Docker `pg_dump` copy.
+- **Restoring on a Docker server (pg_dump copy).** `gunzip -c backups/brandit-db-<stamp>.sql.gz | docker compose exec -T db psql -U brandit brandit`
+- **Is it up?** Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health` and have it text you. Free monitors check every 3 to 5 minutes.
+- **Errors.** Make a free Sentry project (platform Node.js) and set `SENTRY_DSN`. Every server error is then sent to Sentry, which emails the team. Only the error text and the page address (without its query string) are sent: no cookies, form data or customer details, and anything that looks like a key or database address is blanked. Set `ALERT_PHONE` as well and the few things that must never wait (a payment that could not be applied, the database down, a failed backup) also reach your phone. Press **Send a test alert** on the Setup page to see both arrive.
 - **Logs.** Render: the service's **Logs** tab. Docker server: `docker compose logs -f app`.
 - **The five-minute check** runs inside the server and refunds late 24-hour orders by itself. In the same pass it sends the unpaid-order reminders, issues referral rewards, erases rider positions that are no longer needed, and deletes review photos nobody checked in 60 days. The Setup page shows when it last ran. If it says "has not run", restart the app and look at the logs. Keep one instance of the web service so the check does not run twice.
 - **If the site is down.** Render: check the service's **Events** and **Logs**. Docker server: `docker compose ps` shows which part stopped, and `docker compose up -d` brings it back. Orders already paid are safe in the database.

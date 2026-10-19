@@ -3,7 +3,7 @@ import { putFile, deleteFile, getFile } from './storage';
 import { processImage, ImageError } from './imageTools';
 import { makeQuote } from './quote';
 import { getSettings } from './settings';
-import { createDraft, setArtworkPath } from './orders';
+import { addLine, createDraft, setArtworkPath } from './orders';
 import { saveSimpleFile } from './artwork';
 import { quantitySteps } from './catalog';
 import {
@@ -66,7 +66,7 @@ export async function quantityChoices(t: Template): Promise<number[]> {
   return steps.includes(t.quantity) ? steps : [...steps, t.quantity].sort((a, b) => a - b);
 }
 
-export type StartInput = { answers: unknown; quantity?: number; colours?: string; files?: { name: string; type: string; buf: Buffer }[]; customerId?: string | null };
+export type StartInput = { answers: unknown; quantity?: number; colours?: string; files?: { name: string; type: string; buf: Buffer }[]; customerId?: string | null; /** The customer's open basket. The template goes into it as one more product. */ basketOrderId?: string | null };
 export type StartResult = { ok: true; orderId: string } | { ok: false; error: string; field?: string };
 
 /**
@@ -83,10 +83,22 @@ export async function startFromTemplate(slug: string, i: StartInput): Promise<St
   const choices = await quantityChoices(t);
   if (!choices.includes(qty)) return { ok: false, error: 'Pick one of the quantities shown.', field: 'quantity' };
 
-  const draft = await createDraft({ slug: t.product_slug, quantity: qty, config: t.config, sizeKey: t.size_key ?? undefined, widthFt: t.width_ft ?? undefined, heightFt: t.height_ft ?? undefined });
-  if ('error' in draft) return { ok: false, error: draft.error };
-
-  const item = await one<{ id: string }>('select id from order_items where order_id = $1 order by id limit 1', [draft.id]);
+  const line = { slug: t.product_slug, quantity: qty, config: t.config, sizeKey: t.size_key ?? undefined, widthFt: t.width_ft ?? undefined, heightFt: t.height_ft ?? undefined };
+  // Into the basket the customer already has, or a new one.
+  let orderId: string | null = null;
+  let itemId: string | null = null;
+  if (i.basketOrderId) {
+    const a = await addLine(i.basketOrderId, line);
+    if (!('error' in a)) { orderId = i.basketOrderId; itemId = a.itemId; }
+  }
+  if (!orderId || !itemId) {
+    const d = await createDraft(line);
+    if ('error' in d) return { ok: false, error: d.error };
+    orderId = d.id;
+    itemId = (await one<{ id: string }>('select id from order_items where order_id = $1 order by position, id limit 1', [d.id]))!.id;
+  }
+  const draft = { id: orderId };
+  const item = { id: itemId };
   const refIds: string[] = [];
   for (const f of (i.files ?? []).slice(0, 3)) {
     const r = await saveSimpleFile(draft.id, item!.id, 'artwork', f);
@@ -105,7 +117,7 @@ export async function startFromTemplate(slug: string, i: StartInput): Promise<St
     template: { slug: t.slug, title: t.title },
     ...(brand ? { brand_kit: brand } : {}),
   };
-  await setArtworkPath(draft.id, 'design', brief);
+  await setArtworkPath(draft.id, 'design', brief, item.id);
   await query('update orders set template_id = $2 where id = $1', [draft.id, t.id]);
   await query("insert into events (name, props) values ('template_started', $1)", [JSON.stringify({ template: t.slug, quantity: qty })]);
   return { ok: true, orderId: draft.id };

@@ -1,9 +1,12 @@
 import Link from 'next/link';
-import { listCatalog, listZones, quantitySteps } from '@/lib/catalog';
+import { listCatalog } from '@/lib/catalog';
 import { featuredReviews } from '@/lib/publicReviews';
 import { getSettings } from '@/lib/settings';
+import { getBusiness } from '@/lib/business';
+import { getHome, foundingCount } from '@/lib/homeContent';
 import { scores } from '@/lib/reports';
-import { HeroQuote } from '@/components/HeroQuote';
+import { QuickOrder } from '@/components/builder/QuickOrder';
+import { OpenOrder } from '@/components/builder/HeaderButtons';
 import { ProductTile } from '@/components/ProductTile';
 import { Check } from '@/components/Bits';
 import { Halftone } from '@/components/Brand';
@@ -26,17 +29,20 @@ const STEPS = [
 
 export default async function Home(props: { searchParams: Promise<{ deleted?: string }> }) {
   const sp = await props.searchParams;
-  const [catalog, zones, sc, reviews, me, settings, lang, season, allTemplates] = await Promise.all([listCatalog(), listZones(), scores(), featuredReviews(3), getCustomer(), getSettings(), getLang(), homeCampaign(), listTemplates()]);
+  const [catalog, sc, reviews, me, settings, lang, season, allTemplates, home] = await Promise.all([listCatalog(), scores(), featuredReviews(3), getCustomer(), getSettings(), getLang(), homeCampaign(), listTemplates(), getHome()]);
+  const taken = home.founding.on ? await foundingCount() : 0;
   const t = translator(lang);
   const shownTemplates = allTemplates.slice(0, 4);
   const templatePrices = await Promise.all(shownTemplates.map((x) => templatePrice(x).catch(() => null)));
   const seasonLeft = season ? leftText(season, lagosToday()) : null;
   const sp_ = season ? THEMES[themeOf(season.theme)] : null;
-  // The live example in the hero: business cards when we sell them, otherwise the first product priced by quantity.
-  const heroCard = catalog.find((c) => c.product.slug === 'business-cards' && c.product.pricing_mode === 'tier') ?? catalog.find((c) => c.product.pricing_mode === 'tier');
-  const heroQty = heroCard ? await quantitySteps(heroCard.product.id) : [];
-  const shown = catalog.slice(0, 7);
-  const wa = process.env.NEXT_PUBLIC_WHATSAPP;
+  // The quick order in the hero: every product, the first six as tiles.
+  const quick = catalog.map(({ product: p, from, cover, coverAlt, fast }) => ({ slug: p.slug, name: p.name, from, cover, coverAlt, category: p.category, fast }));
+  // The team can choose which products come first. Anything they picked that is no longer sold is skipped.
+  const picked = home.featured.map((slug) => catalog.find((c) => c.product.slug === slug)).filter((c): c is (typeof catalog)[number] => !!c);
+  const shown = picked.length >= 3 ? picked.slice(0, 8) : catalog.slice(0, 7);
+  const biz = await getBusiness();
+  const wa = biz.whatsapp;
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
   const ld = {
     '@context': 'https://schema.org',
@@ -61,10 +67,10 @@ export default async function Home(props: { searchParams: Promise<{ deleted?: st
         <Halftone cols={13} rows={13} gap={44} max={17} className="pointer-events-none absolute -right-16 top-0 hidden h-[620px] w-auto opacity-[.55] lg:block" />
         <div className="relative mx-auto grid max-w-[1160px] items-center gap-14 px-5 pb-20 pt-10 sm:pt-14 lg:grid-cols-[1.08fr_1fr] lg:pb-24">
           <div className="grid gap-7">
-            <h1 className="text-[46px] leading-[0.98] sm:text-[68px] lg:text-[80px]">{t('Printing without the hassle.')}</h1>
-            <p className="max-w-[500px] text-[20px] leading-snug text-muted">{t('See your price and your delivery time before you pay. Upload a file or let us design it. We check it, print it and bring it to you.')}</p>
+            <h1 className="text-[46px] leading-[0.98] sm:text-[68px] lg:text-[80px]">{home.headline || t('Printing without the hassle.')}</h1>
+            <p className="max-w-[500px] text-[20px] leading-snug text-muted">{home.subline || t('See your price and your delivery time before you pay. Upload a file or let us design it. We check it, print it and bring it to you.')}</p>
             <div className="flex flex-wrap gap-3.5">
-              <Link href="/products" className="btn-primary !px-8 text-[18px]">{t('Start your order')}</Link>
+              <OpenOrder label={t('Order now')} className="btn-primary !px-8 text-[18px]" />
               {wa ? <a href={`https://wa.me/${wa}`} className="btn-secondary !px-8 text-[18px]">{t('Order on WhatsApp')}</a> : <Link href="/help#promise" className="btn-secondary !px-8 text-[18px]">{t('How the Promise works')}</Link>}
             </div>
             <ul className="grid gap-2.5 text-[16px] font-medium">
@@ -73,18 +79,32 @@ export default async function Home(props: { searchParams: Promise<{ deleted?: st
               ))}
             </ul>
           </div>
-          {heroCard && heroQty.length > 0 ? (
-            <HeroQuote defaultArea={me?.default_area ?? null} zones={zones.map((z) => ({ id: z.id, name: z.name, areas: z.areas }))} qtys={heroQty} slug={heroCard.product.slug} name={heroCard.product.name} />
+          {quick.length > 0 ? (
+            <QuickOrder products={quick} />
           ) : (
             <div className="card grid gap-4 rounded-lg2 border-ink p-7 shadow-press">
               <p className="font-display text-[26px] font-extrabold leading-tight">Tell us what you need.</p>
-              <p className="text-muted">Pick a product to see your price and delivery time, or describe something special and a person sends you a price.</p>
-              <Link href="/products" className="btn-primary">See the products</Link>
+              <p className="text-muted">Describe something special and a person sends you a price.</p>
+              <Link href="/custom-order" className="btn-primary">Ask for a custom price</Link>
             </div>
           )}
         </div>
       </section>
 
+
+      {home.founding.on && (
+        <section aria-label="Founding customers" className="mx-auto max-w-[1160px] px-5 pb-10">
+          <div className="grid items-center gap-3 rounded-lg2 border-2 border-ink bg-surface p-5 sm:grid-cols-[auto_1fr_auto] sm:gap-6 sm:p-6">
+            <p className="font-display text-[34px] font-extrabold leading-none tabular sm:text-[44px]">{Math.min(taken, home.founding.limit)}<span className="text-muted"> / {home.founding.limit}</span></p>
+            <div className="grid gap-2">
+              <p className="text-[19px] font-bold leading-tight">{taken >= home.founding.limit ? 'Our founding customers are all here. Thank you.' : `Founding customers: ${home.founding.limit - taken} place${home.founding.limit - taken === 1 ? '' : 's'} left`}</p>
+              {home.founding.perk && taken < home.founding.limit && <p className="text-[15px] text-muted">{home.founding.perk}</p>}
+              <div className="h-2.5 overflow-hidden rounded-full bg-paper2" role="progressbar" aria-valuemin={0} aria-valuemax={home.founding.limit} aria-valuenow={Math.min(taken, home.founding.limit)} aria-label="Founding places taken"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, Math.round((taken / home.founding.limit) * 100))}%` }} /></div>
+            </div>
+            {taken < home.founding.limit && <OpenOrder label={t('Order now')} className="btn-primary btn-sm" />}
+          </div>
+        </section>
+      )}
 
       {season && sp_ && (
         <section aria-label={season.title} className="mx-auto max-w-[1160px] px-5 pb-12">
@@ -184,7 +204,7 @@ export default async function Home(props: { searchParams: Promise<{ deleted?: st
               {[
                 ['Printed wrong? We reprint or refund.', 'If the job does not match the file you approved, we fix it at no cost.'],
                 ['Late on a 24-hour order? Delivery is on us.', 'The delivery fee comes back automatically. You do not have to ask.'],
-                ['A person answers.', 'We reply on WhatsApp within 15 minutes, Monday to Saturday, 8am to 6pm.'],
+                ['A person answers.', `We reply on WhatsApp within ${biz.replyWithin}, ${biz.hours}.`],
               ].map(([title, d]) => (
                 <div key={title} className="grid gap-1 border-l-4 border-accent pl-5"><p className="text-[21px] font-bold leading-tight">{t(title)}</p><p className="text-on-ink-muted">{d}</p></div>
               ))}

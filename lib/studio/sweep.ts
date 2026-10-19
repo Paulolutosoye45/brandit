@@ -2,6 +2,7 @@ import { query } from '../db';
 import { purgeExpired } from './projects';
 import { applyPendingPaid } from './purchases';
 import { recoverStale } from './worker';
+import { sweepStudioLines } from './inOrder';
 
 /**
  * The Studio part of the five-minute sweep.
@@ -10,10 +11,11 @@ import { recoverStale } from './worker';
  *  - Forgets old free-sketch records, which exist only to count the week.
  */
 export async function runStudioSweep(now = new Date()) {
-  const out = { purged: 0, recovered: 0, applied: 0, sketchLogs: 0 };
+  const out = { purged: 0, recovered: 0, applied: 0, sketchLogs: 0, unlocked: 0, attached: 0 };
   try { out.purged = await purgeExpired(); } catch (e: any) { console.error('[brandit] studio purge failed:', e?.message ?? e); }
   try { out.recovered = await recoverStale(); } catch (e: any) { console.error('[brandit] studio recover failed:', e?.message ?? e); }
   try { out.applied = await applyPendingPaid(); } catch (e: any) { console.error('[brandit] studio apply failed:', e?.message ?? e); }
+  try { const l = await sweepStudioLines(); out.unlocked = l.unlocked; out.attached = l.attached; } catch (e: any) { console.error('[brandit] studio order lines failed:', e?.message ?? e); }
   try {
     const old = await query<{ id: number }>('delete from studio_sketch_log where at < $1 returning id', [new Date(now.getTime() - 40 * 86_400_000).toISOString()]);
     out.sketchLogs = old.length;

@@ -2,12 +2,14 @@ import { one, query, tx, type Q } from './db';
 import { normalizePhone } from './phone';
 import { cleanEmail, isEmail } from './otp';
 import { listZones } from './catalog';
+import { claimBusiness } from './businessAccounts';
 
 export type Customer = {
   id: string; phone: string | null; email: string | null; email_verified: boolean; google_sub: string | null;
   name: string | null; whatsapp_phone: string | null; account_type: 'personal' | 'business'; default_area: string | null;
   marketing_opt_in: boolean; avatar_url: string | null; profile_completed_at: string | null; business_id: string | null;
   nudge_ok: boolean; lang: 'en' | 'pcm';
+  reminders_ok: boolean; business_role: 'owner' | 'member' | null;
 };
 export type Method = 'google' | 'email' | 'phone';
 export class GoogleConflictError extends Error { constructor() { super('GOOGLE_ACCOUNT_CONFLICT'); } }
@@ -115,7 +117,7 @@ export async function saveProfile(customerId: string, d: ProfileInput): Promise<
 
   await tx(async (q) => {
     let businessId = c.business_id;
-    if (d.accountType === 'business') {
+    if (d.accountType === 'business' && c.business_role !== 'member') {
       const company = d.company!.trim();
       const b = businessId ? await q.query<{ id: string }>('select id from businesses where id = $1 and lower(name) = lower($2)', [businessId, company]) : [];
       businessId = b[0]?.id ?? (await q.query<{ id: string }>('insert into businesses (name) values ($1) returning id', [company]))[0].id;
@@ -125,6 +127,8 @@ export async function saveProfile(customerId: string, d: ProfileInput): Promise<
          email = coalesce(email, $7), marketing_opt_in = $8, profile_completed_at = coalesce(profile_completed_at, now()) where id = $1`,
       [customerId, name, wa === c.phone ? null : wa, d.accountType, d.accountType === 'business' ? businessId : c.business_id, area ?? c.default_area, email, !!d.marketing],
     );
+    const under = d.accountType === 'business' ? businessId : c.business_id;
+    if (under) await claimBusiness(q, under, customerId);
   });
   return { ok: true };
 }

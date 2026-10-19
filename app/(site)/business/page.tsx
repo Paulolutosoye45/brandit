@@ -3,14 +3,14 @@ import Link from 'next/link';
 import { PageHead } from '@/components/Bits';
 import { Check } from '@/components/Bits';
 import { getSettings } from '@/lib/settings';
-import { contact } from '@/lib/site';
+import { getContact } from '@/lib/business';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Brandit for business', description: 'Reorder in one tap, VAT invoices, plain-pack delivery for agencies, ID cards for staff, and custom quotes for bigger jobs.' };
 
 export default async function Business() {
   const s = await getSettings();
-  const c = contact();
+  const c = await getContact();
   const perks: [string, string][] = [
     ['Same again, in one tap', 'Reorder a past job with its approved file at today\'s price. No uploading, no new proof.'],
     ['Proper invoices', 'A pro-forma before you pay and a VAT invoice after, with your business name and tax number.'],

@@ -26,4 +26,34 @@ describe('a database that will not open', () => {
     expect(body.problem).toMatch(/refused the connection/);
     expect(JSON.stringify(body)).not.toMatch(/secretpw|127\.0\.0\.1/);
   });
+  it('tells the owner by phone once the database has been down for two minutes, and again when it is back', async () => {
+    vi.stubEnv('DEMO_MODE', 'false');
+    vi.stubEnv('ALERT_PHONE', '2348031234567');
+    vi.stubEnv('SMS_API_KEY', 'sms-key');
+    const sent: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { try { sent.push(JSON.parse(init.body).sms); } catch { /* not an SMS */ } return new Response('{}', { status: 200 }); }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { GET } = await import('../app/api/health/route');
+    const { resetDatabaseWatch, resetSiteAlertMemory } = await import('../lib/siteAlert');
+    resetDatabaseWatch(); resetSiteAlertMemory();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-15T10:00:00Z'));
+      await GET();
+      expect(sent.filter((s) => s)).toHaveLength(0);
+      vi.setSystemTime(new Date('2026-10-15T10:01:00Z'));
+      await GET();
+      expect(sent.filter((s) => s)).toHaveLength(0);
+      vi.setSystemTime(new Date('2026-10-15T10:03:00Z'));
+      await GET();
+      await new Promise((r) => setTimeout(r, 50));
+      const down = sent.filter((s) => /not answering/.test(s ?? ''));
+      expect(down).toHaveLength(1);
+      expect(down[0]).not.toMatch(/secretpw|127\.0\.0\.1/);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
 });

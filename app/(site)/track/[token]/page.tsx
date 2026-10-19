@@ -4,6 +4,7 @@ import { Notice } from '@/components/Bits';
 import { TrackerLive } from './TrackerLive';
 import { getCustomer } from '@/lib/session';
 import { one } from '@/lib/db';
+import { getBusiness } from '@/lib/business';
 import { referralSummary } from '@/lib/referrals';
 import { InviteCard } from '@/components/InviteCard';
 
@@ -31,7 +32,7 @@ export default async function TrackPage(
         {searchParams.reported && <Notice tone="good">Thank you. We have your report and a person will look at it today. We will message you.</Notice>}
         {searchParams.reviewed && <Notice tone="good">{searchParams.reviewed === 'photo' ? 'Thank you. A person checks your photo before anyone else sees it.' : 'Thank you for your review.'}</Notice>}
       </div>
-      <TrackerLive initial={t} whatsapp={process.env.NEXT_PUBLIC_WHATSAPP ?? null} />
+      <TrackerLive initial={t} whatsapp={(await getBusiness()).whatsapp} />
       {invite && <div className="mx-auto max-w-[760px] px-5 pb-12"><InviteCard r={invite} compact /></div>}
     </>
   );

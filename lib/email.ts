@@ -30,9 +30,12 @@ export function codeEmail(code: string) {
   return { subject: `${code} is your Brandit code`, text, html };
 }
 
-export function receiptEmail(v: { code: string; product: string; quantity: number; totalNaira: string; arrival: string; trackUrl: string; receiptUrl: string; couponCode?: string | null; discountNaira?: string | null }) {
+export function receiptEmail(v: { code: string; product: string; quantity: number | null; lines?: { name: string; quantity: number }[]; totalNaira: string; arrival: string; trackUrl: string; receiptUrl: string; couponCode?: string | null; discountNaira?: string | null }) {
   // A custom job is one line with its own title, so it has no "1 x" in front of it.
-  const what = v.product.startsWith('Custom:') ? v.product : `${v.quantity.toLocaleString('en-US')} x ${v.product}`;
+  // A basket lists every product. A custom job has its own title and no "1 x" in front of it.
+  const what = v.lines && v.lines.length > 1
+    ? v.lines.map((l) => `${l.quantity.toLocaleString('en-US')} x ${l.name}`).join('\n')
+    : v.product.startsWith('Custom:') ? v.product : `${(v.quantity ?? 1).toLocaleString('en-US')} x ${v.product}`;
   const saved = v.couponCode && v.discountNaira ? `Coupon ${v.couponCode} saved you ${v.discountNaira}` : null;
   const logo = `${appUrl()}/brand/logo-horizontal.png`;
   const text = `Paid. We have started on order ${v.code}.\n\n${what}\n${saved ? `${saved}\n` : ''}Total ${v.totalNaira}\n${v.arrival}\n\nTrack your order: ${v.trackUrl}\nYour receipt: ${v.receiptUrl}\n\nNext, a person checks your file. Brandit. Printing without the hassle.`;
@@ -42,7 +45,7 @@ export function receiptEmail(v: { code: string; product: string; quantity: numbe
 <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border:1px solid #D9DFE5;border-radius:16px">
 <tr><td style="padding:28px 32px 8px"><img src="${esc(logo)}" alt="Brandit" height="32" style="height:32px;width:auto;display:block"></td></tr>
 <tr><td style="padding:12px 32px 0;font-size:26px;font-weight:800;line-height:1.15">Paid. We have started on order ${esc(v.code)}.</td></tr>
-<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #D9DFE5;border-radius:12px"><tr><td style="padding:16px 18px;font-size:16px">${esc(what).replace(' x ', ' &times; ')}${saved ? `<div style="margin-top:6px;font-size:14px;color:#146B3A">${esc(saved)}</div>` : ''}</td><td align="right" style="padding:16px 18px;font-size:20px;font-weight:800">${esc(v.totalNaira)}</td></tr></table></td></tr>
+<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #D9DFE5;border-radius:12px"><tr><td style="padding:16px 18px;font-size:16px">${esc(what).replace(/ x /g, ' &times; ').replace(/\n/g, '<br>')}${saved ? `<div style="margin-top:6px;font-size:14px;color:#146B3A">${esc(saved)}</div>` : ''}</td><td align="right" style="padding:16px 18px;font-size:20px;font-weight:800">${esc(v.totalNaira)}</td></tr></table></td></tr>
 <tr><td style="padding:16px 32px 0"><div style="background:#E3F4EC;border-radius:12px;padding:14px 18px;font-size:16px;font-weight:700">${esc(v.arrival)}</div></td></tr>
 <tr><td style="padding:20px 32px 0;font-size:16px;line-height:1.5">Next, a person checks your file. We will message you at every step, so you never have to chase.</td></tr>
 <tr><td style="padding:20px 32px 28px">${btn(v.trackUrl, 'Track your order')}${btn(v.receiptUrl, 'View your receipt', true)}</td></tr>

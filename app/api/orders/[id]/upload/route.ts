@@ -15,16 +15,17 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
   if (!(file instanceof File) || file.size === 0) return NextResponse.json({ ok: false, error: 'Choose a file to upload.' }, { status: 400 });
   const buf = Buffer.from(await file.arrayBuffer());
   const url = new URL(req.url);
+  const itemId = url.searchParams.get('item') && /^[0-9a-f-]{36}$/.test(url.searchParams.get('item')!) ? url.searchParams.get('item') : null;
 
   if (url.searchParams.get('as') === 'reference') {
     // Logos and examples for the design brief. Stored on the order, not used as the print file.
     const o = await getOrder(params.id);
-    const item = o && (await getItem(params.id));
+    const item = o && (await getItem(params.id, itemId));
     if (!o || !item || !['draft', 'awaiting_payment'].includes(o.status)) return NextResponse.json({ ok: false, error: 'Order not found.' }, { status: 404 });
     const r = await saveSimpleFile(params.id, item.id, 'artwork', { name: file.name, type: file.type, buf });
     return NextResponse.json(r, { status: r.ok ? 200 : 422 });
   }
 
-  const r = await saveArtwork(params.id, { name: file.name, type: file.type, buf });
+  const r = await saveArtwork(params.id, { name: file.name, type: file.type, buf }, itemId);
   return NextResponse.json(r, { status: r.ok ? 200 : 422 });
 }

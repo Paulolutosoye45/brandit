@@ -1,0 +1,78 @@
+# Render Blueprint for the private TEST copy of Brandit ("staging").
+#
+# What it is for: trying every change on a real copy of the site, with test payments, before customers see it. It runs the
+# same build and the same start command as the real site, so a change that works here works there.
+#
+# How to use it (DEPLOY.md, "A private test copy"): in Render choose New, Blueprint, pick the same repository, set the
+# branch to "staging" and the Blueprint file path to "render.staging.yaml". Keep render.yaml for the real site.
+#
+# Differences from the real site, all on purpose:
+#   - It has its own database and its own file bucket, so a test can never touch a real order or a real artwork file.
+#   - APP_ENV=staging: search engines are told to stay away, every page shows a "Test site" bar, and STAGING_PASSWORD is asked for.
+#   - Use Paystack's TEST secret key (sk_test_...) here. The Setup page turns red if a live key is used on this copy.
+#   - It has no SMS or WhatsApp keys, so a test order can never text a real person.
+#   - It can be suspended in the Render dashboard when nobody is testing, which stops the charge for it.
+
+services:
+  - type: web
+    name: brandit-staging
+    runtime: node
+    region: frankfurt
+    branch: staging
+    plan: 1c-2g            # Same size as the real site, so image and PDF checks behave the same.
+    numInstances: 1
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    buildCommand: npm ci --include=dev && npm run build && cp -r public .next/standalone/public && mkdir -p .next/standalone/.next && cp -r .next/static .next/standalone/.next/static && mkdir -p .next/standalone/studio-assets && cp -r studio-assets/. .next/standalone/studio-assets/
+    startCommand: node .next/standalone/server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: APP_ENV
+        value: staging
+      - key: DEMO_MODE
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brandit-staging-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"     # The private-network address.
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      # Asked for once, when you create the Blueprint.
+      - key: STAGING_PASSWORD
+        sync: false        # Anything long. Your team types it (with any user name) to open the test site.
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false        # https://staging.thebrandit.ng, or the onrender.com address until that is ready
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PIN
+        sync: false        # 6 to 12 digits, not a run like 123456. Use a different PIN from the real site.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false        # The TEST secret key: sk_test_...
+      - key: S3_ENDPOINT
+        sync: false        # https://<your Cloudflare account id>.r2.cloudflarestorage.com
+      - key: S3_BUCKET
+        sync: false        # A bucket of its own, for example brandit-staging-files. Never the real one.
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto
+      # Added later in the Render dashboard, if you want to test them here:
+      #   RESEND_API_KEY, EMAIL_FROM, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SENTRY_DSN
+      # Leave out SMS_API_KEY, WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID: test orders must not message real people.
+
+databases:
+  - name: brandit-staging-db
+    region: frankfurt
+    plan: 0.1c-256mb       # The smallest paid plan. It holds test data only.
+    diskSizeGB: 1
+    postgresMajorVersion: "17"
+    ipAllowList: []        # Private: only the test site can connect.

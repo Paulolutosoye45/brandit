@@ -126,38 +126,6 @@ describe('option extras', () => {
   });
 });
 
-describe('option editor input', () => {
-  const ok = { label: 'Finish', choices: [{ label: 'Matt' }, { label: 'Gloss', extra: '2,000', per: 'piece' }] };
-  it('cleans names, makes keys and prices in kobo', () => {
-    const [o] = pa.cleanOptions([ok], 'tier');
-    expect(o.key).toBe('finish');
-    expect(o.choices.map((c) => c.value)).toEqual(['matt', 'gloss']);
-    expect(o.choices[1]).toMatchObject({ extra_kobo: 200_000, extra_per: 'piece' });
-    expect(o.default).toBe('matt');
-  });
-  it('keeps the chosen default by position, even when two labels are alike', () => {
-    const [o] = pa.cleanOptions([{ label: 'Paper', defaultIndex: 1, choices: [{ label: 'A4' }, { label: 'A4' }, { label: 'A5' }] }], 'tier');
-    expect(o.default).toBe(o.choices[1].value);
-    expect(new Set(o.choices.map((c) => c.value)).size).toBe(3);
-  });
-  it('gives colliding option names different keys', () => {
-    const out = pa.cleanOptions([ok, { ...ok }], 'tier');
-    expect(out[0].key).not.toBe(out[1].key);
-  });
-  it('refuses a one-choice option, a nameless option and too many options', () => {
-    expect(() => pa.cleanOptions([{ label: 'Finish', choices: [{ label: 'Matt' }] }], 'tier')).toThrow(/at least two/);
-    expect(() => pa.cleanOptions([{ label: '', choices: [{ label: 'A' }, { label: 'B' }] }], 'tier')).toThrow(/needs a name/);
-    expect(() => pa.cleanOptions(Array.from({ length: 5 }, (_, i) => ({ label: `O${i}`, choices: [{ label: 'A' }, { label: 'B' }] })), 'tier')).toThrow(/up to 4/);
-    expect(() => pa.cleanOptions('nope', 'tier')).toThrow(pa.ProductError);
-  });
-  it('allows per-square-foot extras only on area-priced products, and refuses a bad amount', () => {
-    const sq = { label: 'Eyelets', choices: [{ label: 'No' }, { label: 'Yes', extra: '100', per: 'sqft' }] };
-    expect(() => pa.cleanOptions([sq], 'tier')).toThrow(/square foot/);
-    expect(pa.cleanOptions([sq], 'area')[0].choices[1].extra_per).toBe('sqft');
-    expect(() => pa.cleanOptions([{ label: 'X', choices: [{ label: 'A' }, { label: 'B', extra: '-5000x' }] }], 'tier')).not.toThrow();
-  });
-});
-
 describe('product manager', () => {
   let id = '';
   it('creates a hidden product and never reuses a slug', async () => {

@@ -25,7 +25,7 @@ export async function scores(days = 30): Promise<{ onTime: number | null; rightF
 
 export async function salesByProduct(days = 30) {
   return query<{ name: string; orders: number; revenue: number }>(
-    `select p.name, count(*)::int as orders, coalesce(sum(o.total_kobo),0)::int as revenue
+    `select p.name, count(distinct o.id)::int as orders, coalesce(sum(i.line_total_kobo),0)::int as revenue
      from orders o join order_items i on i.order_id = o.id join products p on p.id = i.product_id
      where o.status in ('paid','in_production','delivered') and o.paid_at >= $1 group by p.name order by revenue desc`,
     [new Date(Date.now() - days * 86_400_000).toISOString()],

@@ -12,17 +12,24 @@ import { LangSwitch } from './LangSwitch';
 import { getCustomer } from '@/lib/session';
 import { getLang } from '@/lib/lang';
 import { getSettings } from '@/lib/settings';
+import { getBusiness } from '@/lib/business';
+import { getHome } from '@/lib/homeContent';
+import { SITE } from '@/lib/site';
 import { runnable } from '@/lib/studio/config';
 import { translator, type Translate } from '@/content/pidgin-ui';
+import { basketCount as countBasket } from '@/lib/basket';
+import { OrderSheetProvider } from './builder/OrderSheet';
+import { BasketLink, OrderNowButton } from './builder/HeaderButtons';
 
-export function Header({ customer, t, studio = false }: { customer: { name: string | null; email: string | null } | null; t: Translate; studio?: boolean }) {
+export function Header({ customer, t, basket = 0 }: { customer: { name: string | null; email: string | null } | null; t: Translate; basket?: number }) {
   const first = customer?.name?.split(' ')[0];
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
       <div className="mx-auto flex h-[64px] max-w-[1160px] items-center justify-between gap-4 px-5">
         <Link href="/" aria-label="Brandit home" className="inline-flex min-h-[44px] shrink-0 items-center"><Logo className="h-9 w-auto" priority /></Link>
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-          {[['/products', 'Products', ''], ['/templates', 'Templates', ''], ...(studio ? [['/studio', 'Studio', 'hidden lg:inline-flex']] : []), ['/plan-event', 'Plan an event', 'hidden xl:inline-flex'], ['/custom-order', 'Custom order', 'hidden xl:inline-flex'], ['/track', 'Track order', ''], ['/help', 'Help', 'hidden lg:inline-flex']].map(([href, label, vis]) => (
+          {/* Four things people come for. Studio, event planning and custom orders sit under "other ways to order" on the Products page and in the footer. */}
+          {[['/products', 'Products', ''], ['/templates', 'Templates', ''], ['/track', 'Track order', ''], ['/help', 'Help', 'hidden lg:inline-flex']].map(([href, label, vis]) => (
             <Link key={href} href={href} className={`${vis || 'inline-flex'} min-h-[44px] items-center whitespace-nowrap rounded-sm2 px-2.5 font-medium hover:bg-paper2`}>{t(label)}</Link>
           ))}
         </nav>
@@ -34,15 +41,16 @@ export function Header({ customer, t, studio = false }: { customer: { name: stri
           ) : (
             <Link href="/signin" className="btn-ghost btn-sm whitespace-nowrap">{t('Sign in')}</Link>
           )}
-          <Link href="/products" className="btn-primary btn-sm hidden whitespace-nowrap md:inline-flex">{t('Start your order')}</Link>
+          <BasketLink initial={basket} label={t('Basket')} />
+          <OrderNowButton label={t('Order now')} />
         </div>
       </div>
     </header>
   );
 }
 
-export function Footer({ t, showLang, studio = false }: { t: Translate; showLang: boolean; studio?: boolean }) {
-  const wa = process.env.NEXT_PUBLIC_WHATSAPP;
+export function Footer({ t, showLang, studio = false, whatsapp = null, hours = SITE.hours }: { t: Translate; showLang: boolean; studio?: boolean; whatsapp?: string | null; hours?: string }) {
+  const wa = whatsapp;
   const link = 'inline-flex min-h-[32px] items-center text-on-ink-muted hover:text-white';
   return (
     <footer className="on-dark relative mt-24 overflow-hidden bg-ink pb-24 text-white md:pb-0">
@@ -77,7 +85,7 @@ export function Footer({ t, showLang, studio = false }: { t: Translate; showLang
           {wa && <a className={link} href={`https://wa.me/${wa}`}>{t('Message us on WhatsApp')}</a>}
           <Link className={link} href="/contact">{t('Contact and hours')}</Link>
           <Link className={link} href="/about">{t('About Brandit')}</Link>
-          <p className="text-on-ink-muted">{t('Monday to Saturday, 8am to 6pm')}</p>
+          <p className="text-on-ink-muted">{hours === SITE.hours ? t('Monday to Saturday, 8am to 6pm') : hours}</p>
         </div>
       </div>
       <div className="relative border-t border-white/10">
@@ -91,20 +99,27 @@ export function Footer({ t, showLang, studio = false }: { t: Translate; showLang
 }
 
 export async function SiteChrome({ children }: { children: React.ReactNode }) {
-  const [c, lang, settings] = await Promise.all([getCustomer(), getLang(), getSettings()]);
+  const [c, lang, settings, basket, biz, home] = await Promise.all([getCustomer(), getLang(), getSettings(), countBasket().catch(() => 0), getBusiness(), getHome()]);
   const t = translator(lang);
   return (
     <LangProvider lang={lang}>
+     <OrderSheetProvider basketCount={basket}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-accent focus:p-3 focus:text-ink">{t('Skip to content')}</a>
-      <Header customer={c ? { name: c.name, email: c.email } : null} t={t} studio={settings.studio_enabled && runnable()} />
+      {home.announce.on && home.announce.text && (
+        <div role="region" aria-label="Announcement" className="on-dark bg-ink px-5 py-2 text-center text-[15px] font-medium text-white">
+          {home.announce.link ? <a href={home.announce.link} className="inline-flex min-h-[32px] items-center gap-2 underline-offset-2 hover:underline">{home.announce.text} <span aria-hidden="true">→</span></a> : home.announce.text}
+        </div>
+      )}
+      <Header customer={c ? { name: c.name, email: c.email } : null} t={t} basket={basket} />
       <CouponCapture />
       <ResumeOrder />
       <main id="main" className="min-h-[60vh] pb-20 md:pb-0">{children}</main>
-      <Footer t={t} showLang={settings.pidgin_enabled} studio={settings.studio_enabled && runnable()} />
+      <Footer t={t} showLang={settings.pidgin_enabled} studio={settings.studio_enabled && runnable()} whatsapp={biz.whatsapp} hours={biz.hours} />
       <InstallPrompt />
-      <BottomNav signedIn={!!c} />
+      <BottomNav signedIn={!!c} basketCount={basket} />
       <ServiceWorker />
-      {process.env.NEXT_PUBLIC_WHATSAPP && <WhatsAppFab number={process.env.NEXT_PUBLIC_WHATSAPP} />}
+      {biz.whatsapp && <WhatsAppFab number={biz.whatsapp} />}
+     </OrderSheetProvider>
     </LangProvider>
   );
 }

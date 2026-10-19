@@ -1,5 +1,8 @@
 import { headers } from 'next/headers';
 import { requireStaff } from '@/lib/session';
+import { Notice } from '@/components/Bits';
+import { testEmailAction, testStorageAction, testPaystackAction, testAlertAction, backupNowAction, restoreTestAction, previewLaunchAction, loadLaunchAction } from './actions';
+import { launchState } from '@/lib/launchPrices';
 import { clientIp } from '@/lib/clientip';
 import { setupChecks, type Check } from '@/lib/setup';
 
@@ -13,9 +16,11 @@ const LOOK: Record<Check['status'], [string, string]> = {
   info: ['bg-placeholder text-ink', 'For your information'],
 };
 
-export default async function Setup() {
-  await requireStaff('see_setup');
+export default async function Setup(props: { searchParams: Promise<{ e?: string; ok?: string }> }) {
+  const me = await requireStaff('see_setup');
+  const sp = await props.searchParams;
   const { checks, problems, warnings } = await setupChecks();
+  const launched = await launchState().catch(() => null);
   const groups = [...new Set(checks.map((c) => c.group))];
   const chain = (await headers()).get('x-forwarded-for');
   const hops = process.env.TRUSTED_PROXY_HOPS ?? '';
@@ -42,6 +47,52 @@ export default async function Setup() {
           </ul>
         </section>
       ))}
+      <section id="tests" className="grid gap-3 scroll-mt-6" aria-label="Test the connections">
+        <h2 className="text-[22px]">Test the connections</h2>
+        <p className="text-muted">A setting can look right and still not work. These press the real button for you and say in plain words what to change.</p>
+        {sp.e && <Notice tone="bad">{sp.e}</Notice>}
+        {sp.ok && <Notice tone="good">{sp.ok}</Notice>}
+        <div className="card divide-y divide-line">
+          <form action={testEmailAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <div className="font-bold">Email</div>
+            <div className="grid gap-2">
+              <label className="label" htmlFor="to">Send a test email to</label>
+              <div className="flex flex-wrap gap-2"><input id="to" name="to" type="email" defaultValue={me.email} className="field min-w-[260px] flex-1" autoComplete="email" /><button className="btn-secondary btn-sm">Send a test email</button></div>
+              <p className="text-[13px] text-muted">Uses the same sender as sign-in codes and receipts. Waits up to 12 seconds for Resend to say whether it arrived. Check the inbox and the spam folder too.</p>
+            </div>
+          </form>
+          <form action={testStorageAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <div className="font-bold">Artwork storage</div>
+            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Test file storage</button><span className="text-[13px] text-muted">Saves a tiny file in the bucket, reads it back and deletes it.</span></div>
+          </form>
+          <form action={testPaystackAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <div className="font-bold">Paystack</div>
+            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Test Paystack</button><span className="text-[13px] text-muted">Proves the key is accepted, says whether it is a live or test key, and starts one N100 payment that it leaves unpaid (one "abandoned" entry appears in Paystack). No money moves.</span></div>
+          </form>
+          <form action={testAlertAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <div className="font-bold">Alerts</div>
+            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Send a test alert</button><span className="text-[13px] text-muted">Sends one harmless test error to Sentry and one test message to the alert number, so you see both arrive before a real one is needed.</span></div>
+          </form>
+          <form action={backupNowAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <div className="font-bold">Backup</div>
+            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Back up now</button><span className="text-[13px] text-muted">Copies the whole database to the bucket and reads it back to prove it is whole. Do this before any big change.</span></div>
+          </form>
+          <form action={restoreTestAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <div className="font-bold">Restore test</div>
+            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Test a restore</button><span className="text-[13px] text-muted">Rebuilds the newest backup in a scratch database and checks every row and the money. Changes nothing live. Takes about a minute.</span></div>
+          </form>
+        </div>
+      </section>
+      <section id="launch" className="grid gap-3 scroll-mt-6" aria-label="Launch price book">
+        <h2 className="text-[22px]">Launch price book</h2>
+        <div className="card grid gap-3 p-4 text-[15px]">
+          <p>{launched ? 'The launch price book is already loaded. Your own changes in Products are the truth now, so it will not load again by itself.' : 'Customers see only prices that are confirmed. This loads the price book that came with Brandit in one go: your numbers, plus the gaps filled from what other Lagos printers publish. Each line in Products, Price sheet shows which is which. Preview first, then load.'}</p>
+          <div className="flex flex-wrap gap-2">
+            <form action={previewLaunchAction}><button className="btn-secondary btn-sm">Preview what it would change</button></form>
+            {!launched && <form action={loadLaunchAction}><button className="btn-primary btn-sm">Load the launch price book</button></form>}
+          </div>
+        </div>
+      </section>
       <section className="grid gap-3" aria-label="Your address">
         <h2 className="text-[22px]">Your address</h2>
         <div className="card grid gap-2 p-4 text-[15px]">

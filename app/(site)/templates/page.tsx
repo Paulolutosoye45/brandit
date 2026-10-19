@@ -23,8 +23,8 @@ export default async function Templates(props: { searchParams: Promise<{ c?: str
       <div className="mx-auto max-w-[1160px] px-5 pb-16">
         {cats.length > 1 && (
           <nav aria-label={t('Template categories')} className="mb-6 flex flex-wrap gap-2">
-            <Link href="/templates" className="choice" aria-pressed={!cat} data-on={!cat}>{t('All')}</Link>
-            {cats.map((c) => <Link key={c} href={`/templates?c=${encodeURIComponent(c)}`} className="choice" aria-pressed={cat === c} data-on={cat === c}>{c}</Link>)}
+            <Link href="/templates" className="choice" aria-current={!cat ? 'page' : undefined} data-on={!cat}>{t('All')}</Link>
+            {cats.map((c) => <Link key={c} href={`/templates?c=${encodeURIComponent(c)}`} className="choice" aria-current={cat === c ? 'page' : undefined} data-on={cat === c}>{c}</Link>)}
           </nav>
         )}
         {shown.length === 0 ? (

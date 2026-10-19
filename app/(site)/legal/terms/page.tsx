@@ -1,10 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { OwnPage } from '@/components/OwnPage';
+import { pageOverride } from '@/lib/contentPages';
 import { LegalPage, LSection, type TocItem } from '@/components/LegalPage';
 import { getSettings } from '@/lib/settings';
 import { naira } from '@/lib/money';
 import { clock12, toMinutes } from '@/lib/time';
-import { SITE, contact } from '@/lib/site';
+import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/business';
 import { MAX_ASSETS, MAX_ASSET_MB } from '@/lib/brandKit';
 import { EVENT_BUFFER_DAYS } from '@/lib/eventPlanCore';
 
@@ -39,9 +42,11 @@ const TOC: TocItem[] = [
 ];
 
 export default async function Terms() {
+  const mine = await pageOverride('terms');
+  if (mine) return <OwnPage title={mine.title} updatedAt={mine.updated_at} body={mine.body} />;
   const s = await getSettings();
   const t = (hhmm: string) => clock12(Math.floor(toMinutes(hhmm) / 60), toMinutes(hhmm) % 60);
-  const c = contact();
+  const c = await getContact();
   const vat = `${+(s.vat_rate * 100).toFixed(2)}%`;
   let n = 0;
   const sec = (id: string) => ({ id, n: ++n, title: TOC.find((x) => x.id === id)!.title });
@@ -282,10 +287,10 @@ export default async function Terms() {
       <LSection {...sec('contact')}>
         <ul>
           <li>{SITE.name}, operated by {SITE.owner}, Lagos, Nigeria.</li>
-          {c.whatsapp && <li>WhatsApp: <a href={c.whatsappLink()!}>message us</a> ({SITE.hours}, we reply within {SITE.replyWithin}).</li>}
+          {c.whatsapp && <li>WhatsApp: <a href={c.whatsappLink()!}>message us</a> ({c.hours}, we reply within {c.replyWithin}).</li>}
           {c.email && <li>Email: <a href={`mailto:${c.email}`}>{c.email}</a></li>}
           {c.address && <li>Address: {c.address}</li>}
-          {!c.whatsapp && !c.email && <li>See our <Link href="/contact">contact page</Link> for how to reach us. We are available {SITE.hours}.</li>}
+          {!c.whatsapp && !c.email && <li>See our <Link href="/contact">contact page</Link> for how to reach us. We are available {c.hours}.</li>}
         </ul>
       </LSection>
     </LegalPage>

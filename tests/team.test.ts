@@ -67,6 +67,12 @@ describe('the first admin', () => {
     expect(await t.ensureAdmin(env({ ADMIN_EMAIL: 'owner@brandit.ng', ADMIN_PIN: '481926' }))).toBe('present');
     expect((await db.one<any>("select count(*)::int as n from staff where email = 'owner@brandit.ng'"))!.n).toBe(1);
   });
+  it('is created for the owner even when other admins exist, and never resets an existing PIN', async () => {
+    expect(await t.ensureAdmin(env({ ADMIN_EMAIL: 'second.owner@brandit.ng', ADMIN_PIN: '583920' }))).toBe('created');
+    const before = (await db.one<any>("select pin_hash from staff where email = 'second.owner@brandit.ng'"))!.pin_hash;
+    expect(await t.ensureAdmin(env({ ADMIN_EMAIL: 'second.owner@brandit.ng', ADMIN_PIN: '640271' }))).toBe('present');
+    expect((await db.one<any>("select pin_hash from staff where email = 'second.owner@brandit.ng'"))!.pin_hash).toBe(before);
+  });
   it('refuses a weak PIN and does nothing without settings', async () => {
     expect(await t.ensureAdmin(env({ ADMIN_EMAIL: 'x@y.com', ADMIN_PIN: '1234' }))).toBe('weak-pin');
     expect(await t.ensureAdmin(env({}))).toBe('skipped');

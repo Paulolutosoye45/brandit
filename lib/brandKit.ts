@@ -40,12 +40,25 @@ export function normalizeWebsite(v: unknown): string | null {
   return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(\/\S*)?$/i.test(bare) ? s : null;
 }
 
+/**
+ * Whose brand kit this person uses: their own, or the company owner's when they joined a company.
+ * Members use the company's kit when they order and cannot change it.
+ */
+export async function kitOwnerId(customerId: string): Promise<string> {
+  const r = await one<{ owner: string | null }>("select b.owner_customer_id as owner from customers c join businesses b on b.id = c.business_id where c.id = $1 and c.business_role = 'member'", [customerId]);
+  return r?.owner ?? customerId;
+}
+const mustOwn = async (customerId: string) => {
+  if ((await kitOwnerId(customerId)) !== customerId) throw new KitError('This is your company\'s brand kit. Only the owner of the company account can change it.');
+};
+
 export async function brandKitFor(customerId: string): Promise<BrandKit | null> {
-  return one<BrandKit>('select * from brand_kits where customer_id = $1', [customerId]);
+  return one<BrandKit>('select * from brand_kits where customer_id = $1', [await kitOwnerId(customerId)]);
 }
 
 export type KitInput = Record<string, unknown>;
 export async function saveBrandKit(customerId: string, i: KitInput): Promise<void> {
+  await mustOwn(customerId);
   const hexes: Record<string, string | null> = {};
   for (const [k, label] of [['primary_hex', 'main'], ['secondary_hex', 'second'], ['accent_hex', 'accent']] as const) {
     const raw = String(i[k] ?? '').trim();
@@ -66,9 +79,10 @@ export async function saveBrandKit(customerId: string, i: KitInput): Promise<voi
 }
 
 export async function listAssets(customerId: string): Promise<BrandAsset[]> {
+  const owner = await kitOwnerId(customerId);
   return query<BrandAsset>(
     'select id, kind, title, mime, bytes, thumb_key is not null as has_thumb, source_order_id, created_at from brand_assets where customer_id = $1 order by created_at desc',
-    [customerId],
+    [owner],
   );
 }
 
@@ -76,6 +90,7 @@ const extOf = (mime: string) => (mime === 'image/jpeg' ? 'jpg' : mime === 'image
 
 /** A logo or design file. The original is kept as it is, because print needs every pixel. A small preview is made for the screen. */
 export async function addAsset(customerId: string, kind: BrandAsset['kind'], title: string, f: { name: string; buf: Buffer }): Promise<BrandAsset> {
+  await mustOwn(customerId);
   if (!['logo', 'design', 'other'].includes(kind)) throw new KitError('Choose what kind of file this is.');
   const have = (await one<{ n: number }>('select count(*)::int as n from brand_assets where customer_id = $1', [customerId]))!.n;
   if (have >= MAX_ASSETS) throw new KitError(`Your brand kit holds up to ${MAX_ASSETS} files. Remove one first.`);
@@ -111,6 +126,7 @@ async function dropIfUnused(key: string | null) {
 }
 
 export async function deleteAsset(customerId: string, assetId: string): Promise<boolean> {
+  await mustOwn(customerId);
   const r = await one<{ storage_key: string; thumb_key: string | null }>('delete from brand_assets where id = $1 and customer_id = $2 returning storage_key, thumb_key', [assetId, customerId]);
   if (!r) return false;
   await dropIfUnused(r.storage_key);
@@ -120,10 +136,13 @@ export async function deleteAsset(customerId: string, assetId: string): Promise<
 
 /** Save the file from a past order as an approved design: the print file, or the proof the customer approved. */
 export async function saveOrderDesign(customerId: string, orderToken: string): Promise<BrandAsset> {
+  await mustOwn(customerId);
   const o = await one<any>(
     `select o.id, o.code, i.id as item_id, i.artwork_path, i.artwork_file_id, coalesce(i.label, p.name) as name
-       from orders o join order_items i on i.order_id = o.id join products p on p.id = i.product_id
-      where o.public_token = $1 and o.customer_id = $2 and o.status in ('paid','in_production','delivered') and p.slug <> 'id-cards'`,
+       from orders o
+       join lateral (select x.* from order_items x join products px on px.id = x.product_id where x.order_id = o.id and px.slug <> 'id-cards' order by x.position, x.id limit 1) i on true
+       join products p on p.id = i.product_id
+      where o.public_token = $1 and o.customer_id = $2 and o.status in ('paid','in_production','delivered')`,
     [orderToken, customerId],
   );
   if (!o) throw new KitError('We could not find that order in your account. ID card files are never saved to a brand kit, because they hold people\'s details.');
@@ -150,10 +169,13 @@ export async function saveOrderDesign(customerId: string, orderToken: string): P
 
 /** Past orders whose file could be saved, newest first, without those already saved. */
 export async function savableOrders(customerId: string) {
+  if ((await kitOwnerId(customerId)) !== customerId) return [];
   return query<{ token: string; code: string; name: string; delivered: boolean }>(
     `select o.public_token as token, o.code, coalesce(i.label, p.name) as name, o.status = 'delivered' as delivered
-       from orders o join order_items i on i.order_id = o.id join products p on p.id = i.product_id
-      where o.customer_id = $1 and o.status in ('paid','in_production','delivered') and not p.system and p.slug <> 'id-cards'
+       from orders o
+       join lateral (select x.* from order_items x join products px on px.id = x.product_id where x.order_id = o.id and not px.system and px.slug <> 'id-cards' order by x.position, x.id limit 1) i on true
+       join products p on p.id = i.product_id
+      where o.customer_id = $1 and o.status in ('paid','in_production','delivered')
         and not exists (select 1 from brand_assets a where a.customer_id = $1 and a.source_order_id = o.id)
       order by o.created_at desc limit 8`,
     [customerId],
@@ -171,7 +193,7 @@ export async function readAsset(id: string, size: 'thumb' | 'full') {
 
 /** Use a saved file as the artwork of an order, running the same checks as an upload. */
 export async function assetBuffer(customerId: string, assetId: string): Promise<{ name: string; type: string; buf: Buffer } | null> {
-  const a = await one<{ storage_key: string; mime: string; title: string }>('select storage_key, mime, title from brand_assets where id = $1 and customer_id = $2', [assetId, customerId]);
+  const a = await one<{ storage_key: string; mime: string; title: string }>('select storage_key, mime, title from brand_assets where id = $1 and customer_id = $2', [assetId, await kitOwnerId(customerId)]);
   if (!a) return null;
   try { return { name: `${a.title}.${extOf(a.mime)}`, type: a.mime, buf: await getFile(a.storage_key) }; } catch { return null; }
 }

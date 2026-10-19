@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireStaff } from '@/lib/session';
 import { can } from '@/lib/permissions';
+import { nameSql } from '@/lib/lines';
 import { query } from '@/lib/db';
 import { Notice } from '@/components/Bits';
 import { moderatePhoto, pendingPhotos, ReviewError } from '@/lib/reviewPhotos';
@@ -40,8 +41,8 @@ export default async function Reviews(props: { searchParams: Promise<{ ok?: stri
   const canPhotos = can(staff.role, 'moderate_photos');
   const [rows, pending] = await Promise.all([
     query<any>(
-      `select r.id, r.rating, r.body, r.public_ok, r.photo_public_ok, r.photo_status, r.featured, r.created_at, o.code, coalesce(i.label, p.name) as product, split_part(coalesce(c.name, ''), ' ', 1) as first_name
-       from reviews r join orders o on o.id = r.order_id join order_items i on i.order_id = o.id join products p on p.id = i.product_id left join customers c on c.id = o.customer_id
+      `select r.id, r.rating, r.body, r.public_ok, r.photo_public_ok, r.photo_status, r.featured, r.created_at, o.code, ${nameSql('o')} as product, split_part(coalesce(c.name, ''), ' ', 1) as first_name
+       from reviews r join orders o on o.id = r.order_id left join customers c on c.id = o.customer_id
        order by r.created_at desc limit 100`,
     ),
     canPhotos ? pendingPhotos() : Promise.resolve([]),

@@ -745,7 +745,7 @@ describe('migration 006 on a database that already has shop data', () => {
     const idx = MIGRATIONS.findIndex((m) => m.id.startsWith('006'));
     expect(idx).toBeGreaterThan(0);
     for (const m of MIGRATIONS.slice(0, idx)) { await pg.exec(m.sql); if (m.after) await m.after(q as any); }
-    for (const slug of ['business-cards', 'flyers', 'posters', 'flex-banners', 'roll-up-banners', 'branded-t-shirts', 'stickers', 'id-cards']) {
+    for (const slug of ['business-cards', 'flyers', 'posters', 'flex-banners', 'roll-up-banners', 'tees-and-totes', 'stickers', 'id-cards']) {
       await pg.exec(`insert into products (slug, name, pricing_mode) values ('${slug}', '${slug}', 'tier') on conflict do nothing`);
     }
     await pg.exec("insert into customers (phone, name) values ('+2348030000000', 'Old Customer')");

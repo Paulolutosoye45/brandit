@@ -10,7 +10,7 @@ import { whatsappTemplateName } from '../lib/messages';
 const EXAMPLES: Record<string, string> = {
   code: 'BR-1042', arrive_line: 'It arrives tomorrow by 5pm.', link: 'https://brandit.ng/track/abc123', staff_name: 'Tunde', issue: 'The picture is too small.',
   delivery_code: '4821', name: 'Ada', product: 'Business cards', friend: 'Chidi', amount: '₦1,000', rider: 'Musa', reason: 'The file had a fault we could not fix.',
-  title: 'Wedding totes', note: 'The phone number looks short.', verdict: 'They like it.',  price: '₦85,000', days: '4', ref: 'CQ-1001', customer: 'Tolu', phone: '0803 123 4567', eta: 'tomorrow', new_time: 'Friday by 5pm',
+  stop: 'https://brandit.ng/reminders/stop/abc123', title: 'Wedding totes', note: 'The phone number looks short.', verdict: 'They like it.',  price: '₦85,000', days: '4', ref: 'CQ-1001', customer: 'Tolu', phone: '0803 123 4567', eta: 'tomorrow', new_time: 'Friday by 5pm',
 };
 const exampleFor = (k: string) => EXAMPLES[k] ?? 'Example';
 
@@ -20,6 +20,8 @@ const lines: string[] = [
   'Submit these in Meta Business Manager, WhatsApp Manager, Message templates. For each one choose **Utility**, language **English** (the Pidgin versions are also submitted under English, because Meta has no Pidgin option), and paste the body exactly as shown. Add the example values when Meta asks for samples.',
   '',
   'Meta does not accept a template that starts or ends with a placeholder, so where that happens this list adds "Brandit: " at the start or \"Thank you.\" at the end. Paste the text as shown. Each placeholder is filled with one line of text.',
+  '',
+  'Three of the templates are reminders and offers, which Meta treats as **Marketing**, not Utility: `reorder_reminder`, `reorder_weekly` and `sample_credit` (and their Pidgin versions). Choose Marketing for those. Brandit only sends them to customers who can be reminded and who have not stopped them.',
   '',
   'Until a template is approved, Brandit sends the same message by SMS. If a Pidgin template is not approved yet, Brandit sends the English one on WhatsApp instead.',
   '',

@@ -3,6 +3,7 @@ import { one } from '@/lib/db';
 import { createClaim } from '@/lib/claims';
 import { saveSimpleFile } from '@/lib/artwork';
 import { Notice, PageHead } from '@/components/Bits';
+import { query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Report a problem' };
@@ -20,7 +21,8 @@ async function report(fd: FormData) {
     photo = r.fileId;
   }
   const kind = (['wrong_print', 'damaged', 'other'] as const).find((k) => k === String(fd.get('kind'))) ?? 'other';
-  const r = await createClaim(token, { kind, description: String(fd.get('description') ?? ''), photoFileId: photo });
+  const itemId = String(fd.get('item') ?? '');
+  const r = await createClaim(token, { kind, description: String(fd.get('description') ?? ''), photoFileId: photo, itemId: /^[0-9a-f-]{36}$/.test(itemId) ? itemId : null });
   if (!r.ok) redirect(`/order/${token}/problem?e=${encodeURIComponent(r.error)}`);
   redirect(`/track/${token}?reported=1`);
 }
@@ -30,8 +32,9 @@ export default async function Problem(
 ) {
   const searchParams = await props.searchParams;
   const params = await props.params;
-  const o = await one('select code, status from orders where public_token = $1', [params.ref]);
+  const o = await one('select id, code, status from orders where public_token = $1', [params.ref]);
   if (!o) notFound();
+  const lines = await query<{ id: string; name: string; quantity: number }>('select i.id, coalesce(i.label, p.name) as name, i.quantity from order_items i join products p on p.id = i.product_id where i.order_id = $1 order by i.position, i.id', [o.id]);
   return (
     <>
       <PageHead title="Report a problem" sub={`Order ${o.code}. Tell us what is not right and a person will look at it today.`} />
@@ -39,6 +42,15 @@ export default async function Problem(
         <form action={report} className="card p-6 grid gap-5">
           <input type="hidden" name="token" value={params.ref} />
           {searchParams.e && <Notice tone="bad">{searchParams.e}</Notice>}
+          {lines.length > 1 && (
+            <div>
+              <label className="label" htmlFor="item">Which product is it about?</label>
+              <select id="item" name="item" className="field" defaultValue="">
+                <option value="">The whole order</option>
+                {lines.map((l) => <option key={l.id} value={l.id}>{l.name} × {l.quantity.toLocaleString('en-US')}</option>)}
+              </select>
+            </div>
+          )}
           <fieldset className="grid gap-2">
             <legend className="label">What happened?</legend>
             {[['wrong_print', 'It does not match the file I approved'], ['damaged', 'It arrived damaged'], ['other', 'Something else']].map(([v, l], i) => (

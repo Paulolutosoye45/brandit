@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { listProducts } from '@/lib/catalog';
+import { getBusiness } from '@/lib/business';
 import { getCustomer } from '@/lib/session';
 import { getSettings } from '@/lib/settings';
 import { contactPhone } from '@/lib/identity';
@@ -33,7 +34,7 @@ export default async function CustomOrder(props: { searchParams: Promise<{ produ
           initialProduct={sp.product ?? ''}
           defaults={{ name: me?.name ?? '', phone: local(me ? contactPhone(me) : null), email: me?.email ?? '' }}
           replyHours={s.custom_reply_hours}
-          whatsapp={process.env.NEXT_PUBLIC_WHATSAPP ?? null}
+          whatsapp={(await getBusiness()).whatsapp}
         />
         <aside className="grid gap-4 lg:sticky lg:top-[84px]" aria-label="How a custom order works">
           <ol className="card p-5 grid gap-4">

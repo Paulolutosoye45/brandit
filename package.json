@@ -10,8 +10,14 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "e2e": "tsx scripts/e2e.ts",
+    "admin": "tsx scripts/admin.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "shots": "tsx scripts/shots.ts",
+    "backup": "tsx scripts/backup.ts",
+    "restore": "tsx scripts/restore.ts",
     "templates:whatsapp": "tsx scripts/whatsapp-templates.ts",
-    "studio:bakeoff": "tsx scripts/studio-bakeoff.ts"
+    "studio:bakeoff": "tsx scripts/studio-bakeoff.ts",
+    "price-test": "tsx scripts/price-test.ts"
   },
   "engines": {
     "node": ">=20"

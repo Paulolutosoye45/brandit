@@ -1,3 +1,4 @@
+import { summarySql } from './lines';
 import { query, one, tx } from './db';
 import { token } from './password';
 import { appUrl, flushMessages, queueMessage } from './messages';
@@ -44,9 +45,18 @@ async function load(tok: string): Promise<Row | null> {
   if (!validRiderToken(tok)) return null;
   return (await one<Row>(
     `select d.*, o.id as order_id, o.code, o.public_token, o.pickup, o.address, o.area, o.speed, o.delivery_window, o.delivery_code, o.plain_pack, o.delivered_at as order_delivered_at,
-            j.id as job_id, j.stage, coalesce(c.name, '') as cname, coalesce(c.whatsapp_phone, c.phone) as cphone,
-            (select coalesce(i.label, p.name) || ' × ' || i.quantity from order_items i join products p on p.id = i.product_id where i.order_id = o.id order by i.id limit 1) as summary
-       from deliveries d join orders o on o.id = d.order_id left join jobs j on j.order_id = o.id left join customers c on c.id = o.customer_id
+            (select j.id from jobs j where j.order_id = o.id order by (j.stage = 'out_for_delivery') desc, j.created_at, j.id limit 1) as job_id,
+            -- One parcel, one drop: the delivery is on the road when every line is, and done when every line is.
+            (case
+               when not exists (select 1 from jobs j where j.order_id = o.id) then null
+               when not exists (select 1 from jobs j where j.order_id = o.id and j.stage <> 'delivered') then 'delivered'
+               when not exists (select 1 from jobs j where j.order_id = o.id and j.stage not in ('out_for_delivery','delivered')) then 'out_for_delivery'
+               else (select j.stage from jobs j where j.order_id = o.id and j.stage not in ('out_for_delivery','delivered')
+                       order by array_position(array['paid','file_check','proof','printing','quality_check'], j.stage) limit 1)
+             end) as stage,
+            coalesce(c.name, '') as cname, coalesce(c.whatsapp_phone, c.phone) as cphone,
+            ${summarySql('o')} as summary
+       from deliveries d join orders o on o.id = d.order_id left join customers c on c.id = o.customer_id
       where d.rider_token = $1`,
     [tok],
   )) ?? null;

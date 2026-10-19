@@ -5,7 +5,8 @@ export type Action =
   | 'dispatch' | 'see_contact' | 'reply' | 'claims' | 'reports' | 'assign_press' | 'run_checks'
   | 'manage_team' | 'see_setup' | 'manage_catalog' | 'manage_coupons' | 'quote_custom'
   | 'manage_templates' | 'manage_campaigns' | 'moderate_photos' | 'manage_growth'
-  | 'manage_studio' | 'review_studio';
+  | 'manage_studio' | 'review_studio'
+  | 'see_payments' | 'refund' | 'see_customers' | 'export_customers' | 'manage_content' | 'manage_business' | 'see_activity' | 'build_order';
 
 const MATRIX: Record<Action, Role[]> = {
   edit_rules: ['admin', 'production_lead'],
@@ -31,6 +32,14 @@ const MATRIX: Record<Action, Role[]> = {
   manage_growth: ['admin', 'production_lead'],
   manage_studio: ['admin', 'production_lead'],               // settings, prices, margin report, invites
   review_studio: ['admin', 'production_lead', 'file_desk'],  // human checks, flagged requests, sample reviews
+  see_payments: ['admin', 'production_lead', 'support'],     // payments list, with the cards and bank details Paystack keeps hidden
+  refund: ['admin', 'production_lead'],                      // a production lead is capped at lead_reprint_limit_kobo, like claims
+  see_customers: ['admin', 'production_lead', 'support'],    // customer list, detail and notes
+  export_customers: ['admin', 'production_lead'],            // the spreadsheet of everyone's name, phone and email
+  manage_content: ['admin', 'production_lead'],              // homepage, FAQ, policy pages
+  manage_business: ['admin'],                                // WhatsApp number, phone, email, address, hours
+  see_activity: ['admin'],                                   // who changed what
+  build_order: ['admin', 'production_lead', 'support'],      // turn a WhatsApp chat into an order with a pay link
 };
 
 export const can = (role: Role, action: Action) => MATRIX[action].includes(role);

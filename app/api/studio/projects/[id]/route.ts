@@ -5,6 +5,7 @@ import {
 } from '@/lib/studio/projects';
 import { unlockWithPack } from '@/lib/studio/purchases';
 import { startOrder } from '@/lib/studio/attach';
+import { addToOrder, removeFromOrder } from '@/lib/studio/inOrder';
 import { kick, requestVector } from '@/lib/studio/worker';
 import { projectView } from '@/lib/studio/view';
 import { bad, customerOr401, good, jsonBody, openOr403, STUDIO_ID } from '@/lib/studio/route';
@@ -121,6 +122,16 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
     case 'order': {
       const r = await startOrder(c, id, { quantity: b.quantity ? Number(b.quantity) : undefined });
       return r.ok ? good({ orderId: r.orderId, next: r.next, credit: r.creditCode, couponMessage: r.couponMessage ?? null }) : fail(r);
+    }
+    case 'add_to_order': {
+      const tier = b.tier === 'premium' ? 'premium' : b.tier === 'standard' ? 'standard' : null;
+      if (!tier) return bad('Choose Standard or Premium.');
+      const r = await addToOrder(c, id, tier);
+      return r.ok ? good({ next: r.next, orderId: r.orderId, feeKobo: r.feeKobo }) : fail(r);
+    }
+    case 'remove_from_order': {
+      const r = await removeFromOrder(c, id);
+      return r.ok ? good({ orderId: r.orderId }) : fail(r);
     }
     case 'delete': {
       const r = await deleteProject(c, id);
