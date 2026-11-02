@@ -3,6 +3,7 @@ import { getStaff } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { addProductImage } from "@/lib/productImages";
 import { ProductError } from "@/lib/productAdmin";
+import { storageProblem } from "@/lib/connections";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -65,10 +66,13 @@ export async function POST(
         size: f.size,
         err: e,
       });
+      const msg = String((e as Error)?.message ?? e);
       errors.push(
         e instanceof ProductError
           ? e.message
-          : `We could not save "${f.name}".`,
+          : /^Storage /.test(msg)
+            ? `We could not save "${f.name}". ${storageProblem(msg)}`
+            : `We could not save "${f.name}".`,
       );
     }
   }

@@ -23,15 +23,25 @@ async function why(res: Response): Promise<string> {
   try { const m = /<Code>([A-Za-z]+)<\/Code>/.exec((await res.text()).slice(0, 2000)); return m ? ` ${m[1]}` : ''; } catch { return ''; }
 }
 
+/**
+ * Uploads with the body as plain bytes. Handing fetch a signed Request instead makes Next.js send the body as a stream
+ * with no Content-Length, and R2 refuses that (411 MissingContentLength).
+ */
+async function put(name: string, buf: Buffer, contentType: string): Promise<void> {
+  const { client, url } = s3();
+  const body = new Uint8Array(buf);
+  const signed = await client.sign(url(name), { method: 'PUT', body, headers: { 'Content-Type': contentType } });
+  const res = await fetch(signed.url, { method: 'PUT', headers: signed.headers, body, cache: 'no-store' });
+  if (!res.ok) throw new Error(`Storage upload failed (${res.status}${await why(res)})`);
+}
+
 const MIME: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf', csv: 'text/csv', svg: 'image/svg+xml' };
 
 export async function putFile(buf: Buffer, ext: string): Promise<string> {
   const e = ext.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 5) || 'bin';
   const key = `${randomUUID()}.${e}`;
   if (s3On()) {
-    const { client, url } = s3();
-    const res = await client.fetch(url(key), { method: 'PUT', body: new Uint8Array(buf), headers: { 'Content-Type': MIME[e] ?? 'application/octet-stream' } });
-    if (!res.ok) throw new Error(`Storage upload failed (${res.status}${await why(res)})`);
+    await put(key, buf, MIME[e] ?? 'application/octet-stream');
     return key;
   }
   await fs.mkdir(dir(), { recursive: true });
@@ -71,9 +81,7 @@ const checkName = (name: string) => { if (!BACKUP_NAME.test(name)) throw new Err
 export async function putNamed(name: string, buf: Buffer, contentType = 'application/gzip'): Promise<void> {
   checkName(name);
   if (s3On()) {
-    const { client, url } = s3();
-    const res = await client.fetch(url(name), { method: 'PUT', body: new Uint8Array(buf), headers: { 'Content-Type': contentType } });
-    if (!res.ok) throw new Error(`Storage upload failed (${res.status}${await why(res)})`);
+    await put(name, buf, contentType);
     return;
   }
   const file = path.join(dir(), name);
