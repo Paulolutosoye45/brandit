@@ -1,5 +1,7 @@
 import { putFile, getFile, deleteFile, s3On } from './storage';
 import { sendStaffNow } from './messages';
+import { emailOn } from './email';
+import { teamEmailsFrom } from './teamAlerts';
 import { parseDsn, reportError } from './errorReport';
 
 /*
@@ -167,12 +169,13 @@ export async function testPaystack(env: NodeJS.ProcessEnv = process.env, doFetch
 
 /**
  * Sends one harmless test of each way the site can tell you something is wrong: a test error to Sentry (which emails the
- * team), and a test message to ALERT_PHONE by WhatsApp or SMS. Each part says in plain words what to look for.
+ * team), a test email to the team's alert addresses, and a test message to ALERT_PHONE by WhatsApp or SMS. Each part says in plain words what to look for.
  */
 export async function testAlert(env: NodeJS.ProcessEnv = process.env, doFetch: typeof fetch = fetch): Promise<TestResult> {
   const phone = env.ALERT_PHONE?.trim();
   const sentryHas = !!env.SENTRY_DSN;
-  if (!sentryHas && !phone) return { ok: false, message: 'There is no SENTRY_DSN and no ALERT_PHONE, so nothing is sent. For phone alerts set ALERT_PHONE to your number (and SMS_API_KEY or the two WHATSAPP values). For error emails make a free Node.js project at sentry.io, copy its DSN, set SENTRY_DSN, and restart.' };
+  const mail = emailOn(env);
+  if (!sentryHas && !phone && !mail) return { ok: false, message: 'There is no SENTRY_DSN and no ALERT_PHONE, and email is not set up, so nothing is sent. For team alert emails set RESEND_API_KEY and EMAIL_FROM. For phone alerts set ALERT_PHONE to your number (and SMS_API_KEY or the two WHATSAPP values). For error emails make a free Node.js project at sentry.io, copy its DSN, set SENTRY_DSN, and restart.' };
   const parts: { ok: boolean; text: string }[] = [];
   if (sentryHas) {
     if (!parseDsn(env.SENTRY_DSN)) parts.push({ ok: false, text: 'SENTRY_DSN is not a Sentry address. Copy it again from Sentry, Project settings, Client Keys. It looks like https://abc123@o123.ingest.sentry.io/456.' });
@@ -184,12 +187,19 @@ export async function testAlert(env: NodeJS.ProcessEnv = process.env, doFetch: t
     }
   }
   if (phone) {
-    const r = await sendStaffNow(phone, 'site_alert', { what: 'This is a test. If you can read it, phone alerts work.' }, env, doFetch);
+    const r = await sendStaffNow(phone, 'site_alert', { what: 'This is a test. If you can read it, phone alerts work.' }, { ...env, RESEND_API_KEY: undefined }, doFetch);
     parts.push(r.ok
       ? { ok: true, text: r.channel === 'whatsapp' ? `Test message sent to ${phone} on WhatsApp. It should arrive in a few seconds.` : `Test message sent to ${phone} by SMS. It should arrive in a few seconds.${r.error ? ' (WhatsApp did not work, so SMS was used. Check the brandit_site_alert template is approved in Meta.)' : ''}` }
       : { ok: false, text: /Neither/.test(r.error ?? '') ? 'ALERT_PHONE is set but neither SMS nor WhatsApp is, so a phone message cannot be sent. Set SMS_API_KEY (Termii) or the two WHATSAPP values.' : `The phone message could not be sent (${(r.error ?? '').slice(0, 160)}). Check ALERT_PHONE is a full number with country code, and the SMS or WhatsApp keys.` });
-  } else {
+  } else if (!mail) {
     parts.push({ ok: true, text: 'No phone alerts yet: set ALERT_PHONE to get a message on your phone for failed payments, a database outage or a failed backup.' });
+  }
+  if (mail) {
+    const to = teamEmailsFrom(undefined, env).join(', ');
+    const r = await sendStaffNow(null, 'site_alert', { what: 'This is a test. If you can read it, team alert emails work.' }, env, doFetch);
+    parts.push(r.ok
+      ? { ok: true, text: `Test email sent to ${to} (or to the addresses typed in Business details). Check the inbox, and the spam folder the first time.` }
+      : { ok: false, text: `The test email could not be sent (${(r.error ?? '').slice(0, 160)}). Check RESEND_API_KEY and EMAIL_FROM.` });
   }
   return { ok: parts.every((p) => p.ok), message: parts.map((p) => p.text).join(' ') };
 }

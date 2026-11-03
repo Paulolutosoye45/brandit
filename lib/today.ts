@@ -10,7 +10,7 @@ import type { Stage } from './types';
  * shop did today. Everything here is a read, so opening Today never changes anything.
  */
 
-export type NavCounts = { files: number; claims: number; quotes: number; payments: number };
+export type NavCounts = { files: number; claims: number; quotes: number; payments: number; whatsapp: number };
 
 /** The little numbers on the menu. One query. */
 export async function navCounts(): Promise<NavCounts> {
@@ -18,9 +18,10 @@ export async function navCounts(): Promise<NavCounts> {
     `select (select count(*)::int from jobs where stage = 'file_check' and not clock_paused) as files,
             (select count(*)::int from claims where status = 'open') as claims,
             (select count(*)::int from custom_requests where status = 'new') as quotes,
-            (select count(*)::int from payments where status in ('review','amount_mismatch')) as payments`,
+            (select count(*)::int from payments where status in ('review','amount_mismatch')) as payments,
+            (select count(*)::int from messages where audience = 'customer' and channel = 'whatsapp_manual' and status = 'to_send' and created_at > now() - interval '3 days') as whatsapp`,
   );
-  return r ?? { files: 0, claims: 0, quotes: 0, payments: 0 };
+  return r ?? { files: 0, claims: 0, quotes: 0, payments: 0, whatsapp: 0 };
 }
 
 export type Need = { key: string; label: string; n: number; href: string; tone: 'bad' | 'warn' | 'info' };
@@ -59,7 +60,7 @@ export async function todayView(staff: StaffUser, now = new Date()): Promise<Tod
     ),
     // A basket that got as far as delivery details in the last day and has not paid: a chance to follow up.
     one<{ n: number }>("select count(*)::int as n from orders where status = 'awaiting_payment' and checkout_saved_at >= now() - interval '24 hours'"),
-    one<{ files: number; claims: number; quotes: number; payments: number; failed: number; reviews: number; studio: number; proofs: number }>(
+    one<{ files: number; claims: number; quotes: number; payments: number; failed: number; reviews: number; studio: number; proofs: number; whatsapp: number }>(
       `select (select count(*)::int from jobs where stage = 'file_check' and not clock_paused) as files,
               (select count(*)::int from claims where status = 'open') as claims,
               (select count(*)::int from custom_requests where status = 'new') as quotes,
@@ -67,7 +68,8 @@ export async function todayView(staff: StaffUser, now = new Date()): Promise<Tod
               (select count(*)::int from messages where status = 'failed' and created_at >= now() - interval '48 hours') as failed,
               (select count(*)::int from reviews where staff_reply is null and rating <= 3) as reviews,
               (select count(*)::int from studio_reviews where status = 'waiting') as studio,
-              (select count(*)::int from jobs j where j.stage = 'proof') as proofs`,
+              (select count(*)::int from jobs j where j.stage = 'proof') as proofs,
+              (select count(*)::int from messages where audience = 'customer' and channel = 'whatsapp_manual' and status = 'to_send' and created_at > now() - interval '3 days') as whatsapp`,
     ),
     listQueue(staff),
     query<{ paid_at: string; total_kobo: number }>(`select paid_at, total_kobo from orders where status in ${PAID} and paid_at >= $1`, [since14.toISOString()]),
@@ -87,7 +89,7 @@ export async function todayView(staff: StaffUser, now = new Date()): Promise<Tod
   risks.sort((a, b) => (a.status === b.status ? 0 : a.status === 'late' ? -1 : 1));
   const late = risks.filter((r) => r.status === 'late').length;
 
-  const c = counts ?? { files: 0, claims: 0, quotes: 0, payments: 0, failed: 0, reviews: 0, studio: 0, proofs: 0 };
+  const c = counts ?? { files: 0, claims: 0, quotes: 0, payments: 0, failed: 0, reviews: 0, studio: 0, proofs: 0, whatsapp: 0 };
   const needs: Need[] = [
     { key: 'payments', label: 'payments to look at', n: c.payments, href: '/console/payments', tone: 'bad' },
     { key: 'late', label: 'orders already late', n: late, href: '/console/queue', tone: 'bad' },
@@ -97,6 +99,7 @@ export async function todayView(staff: StaffUser, now = new Date()): Promise<Tod
     { key: 'files', label: 'files waiting for a check', n: c.files, href: '/console/queue', tone: 'info' },
     { key: 'studio', label: 'Studio designs waiting for a person', n: c.studio, href: '/console/studio/review', tone: 'info' },
     { key: 'reviews', label: 'unhappy reviews with no reply', n: c.reviews, href: '/console/reviews', tone: 'warn' },
+    { key: 'whatsapp', label: 'WhatsApp messages to send', n: c.whatsapp, href: '/console/whatsapp', tone: 'warn' },
     { key: 'failed', label: 'messages that did not send', n: c.failed, href: '/console/messages', tone: 'bad' },
   ].filter((n) => n.n > 0) as Need[];
 

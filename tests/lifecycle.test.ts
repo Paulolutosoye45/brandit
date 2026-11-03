@@ -156,7 +156,8 @@ describe('payment', () => {
     expect(jobs[0].stage).toBe('file_check');
     const msgs = await db.query("select * from messages where order_id = $1 and template = 'paid'", [d.id]);
     expect(msgs.length).toBe(1);
-    expect(msgs[0].status).toBe('logged');
+    // With no email, SMS or paid WhatsApp set up, the update waits for a person to send it on WhatsApp.
+    expect(msgs[0].status).toBe('to_send');
   });
   it('verifies Paystack webhook signatures', () => {
     const body = JSON.stringify({ event: 'charge.success' });

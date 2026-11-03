@@ -6,6 +6,8 @@ import { TEMPLATES } from '@/content/messages';
 import { GROUPS, WHEN, preview } from '@/lib/messageCatalog';
 import { whatsappName } from '@/lib/messageNames';
 import { whatsappOn, smsOn } from '@/lib/messages';
+import { emailOn } from '@/lib/email';
+import { teamEmailsFrom } from '@/lib/teamAlerts';
 import { describeWhen } from '@/lib/time';
 import { Notice } from '@/components/Bits';
 import { retryMessageAction, testMessageAction } from './actions';
@@ -19,17 +21,22 @@ export default async function Messages(props: { searchParams: Promise<{ e?: stri
   if (!can(staff.role, 'manage_content') && !can(staff.role, 'see_setup')) await requireStaff('manage_content');
   const canTest = can(staff.role, 'manage_content');
   const failedOnly = sp.show === 'failed';
-  const log = await query<{ id: number; template: string; to_phone: string | null; body: string; status: string; channel: string; error: string | null; created_at: string }>(
-    `select id, template, to_phone, body, status, channel, error, created_at from messages ${failedOnly ? "where status = 'failed'" : ''} order by id desc limit 60`,
+  const log = await query<{ id: number; template: string; to_phone: string | null; to_email: string | null; body: string; status: string; channel: string; error: string | null; created_at: string }>(
+    `select id, template, to_phone, to_email, body, status, channel, error, created_at from messages ${failedOnly ? "where status = 'failed'" : ''} order by id desc limit 60`,
   );
-  const live = whatsappOn() ? 'WhatsApp' : smsOn() ? 'SMS' : null;
+  const mail = emailOn();
   return (
-    <div className="grid max-w-[920px] gap-7">
+    <div className="grid max-w-[920px] grid-cols-1 gap-7">
       <div><h1 className="text-[34px]">Messages</h1><p className="text-muted">Every message Brandit sends, when it goes out and exactly what it says. Send one to your own phone to see it arrive.</p></div>
       {sp.e && <Notice tone="bad">{sp.e}</Notice>}
       {sp.ok && <Notice tone="good">{sp.ok}</Notice>}
-      {live ? <Notice tone="good">Messages go out by {live}{whatsappOn() && smsOn() ? ', with SMS as the back-up' : ''}.</Notice> : <Notice tone="warn">No way of messaging customers is connected, so messages are only logged. Connect WhatsApp or SMS in Connections.</Notice>}
-      <Notice tone="neutral">WhatsApp only lets a business send wording that Meta has approved, so the words are fixed in the code and listed in <code>WHATSAPP_TEMPLATES.md</code> for you to submit. Changing a word means getting it approved again. What you can do here is read each one and test it.</Notice>
+      {whatsappOn()
+        ? <Notice tone="warn">The paid WhatsApp Business Platform is on, so every message goes through Meta and is charged{smsOn() ? ', with SMS as the back-up' : ''}. To stop paying, remove WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID and restart.</Notice>
+        : mail
+          ? <Notice tone="good">Customers with an email get each message by email at once{smsOn() ? ', and those without one get an SMS' : ''}. Messages that need a person on WhatsApp wait under <a className="underline" href="/console/whatsapp">WhatsApp to send</a>. No Meta fees.</Notice>
+          : <Notice tone="warn">Email is not set up, so customers cannot be messaged by themselves{smsOn() ? ' (SMS is on)' : ''}. Every message waits under <a className="underline" href="/console/whatsapp">WhatsApp to send</a> for a person to send. Set RESEND_API_KEY and EMAIL_FROM in Connections.</Notice>}
+      <Notice tone="neutral">Team alerts (a paid order, a custom request, a problem report, a late job) go by email to {teamEmailsFrom(undefined).join(', ')}, or the addresses typed in Business details. If one failed it shows below with a Try again button.</Notice>
+      <Notice tone="neutral">The wording of each message below is fixed in the code. Paid WhatsApp would need Meta to approve every word; email and the free WhatsApp list do not. What you can do here is read each one and test it.</Notice>
 
       <section id="log" className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -40,10 +47,10 @@ export default async function Messages(props: { searchParams: Promise<{ e?: stri
           <ul className="card divide-y divide-line">
             {log.map((m) => (
               <li key={m.id} className="grid gap-1 px-4 py-3">
-                <p className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-muted"><span>{m.template.replace(/_/g, ' ')} · {m.to_phone ?? 'no number'} · {m.channel}</span><span className={m.status === 'failed' ? 'font-bold text-bad' : ''}>{m.status} · {describeWhen(new Date(m.created_at))}</span></p>
-                <p className="text-[15px]">{m.body}</p>
+                <p className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-muted [overflow-wrap:anywhere]"><span>{m.template.replace(/_/g, ' ')} · {m.to_email ?? m.to_phone ?? 'no number'} · {m.channel === 'whatsapp_manual' ? 'WhatsApp (by a person)' : m.channel}</span><span className={m.status === 'failed' ? 'font-bold text-bad' : ''}>{m.status} · {describeWhen(new Date(m.created_at))}</span></p>
+                <p className="text-[15px] [overflow-wrap:anywhere]">{m.body}</p>
                 {m.error && <p className="text-[13px] text-bad">{m.error}</p>}
-                {m.status === 'failed' && canTest && m.to_phone && <form action={retryMessageAction}><input type="hidden" name="id" value={m.id} /><button className="btn-secondary btn-sm">Try again</button></form>}
+                {m.status === 'failed' && canTest && (m.to_phone || m.to_email) && <form action={retryMessageAction}><input type="hidden" name="id" value={m.id} /><button className="btn-secondary btn-sm">Try again</button></form>}
               </li>
             ))}
           </ul>

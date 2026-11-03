@@ -1062,4 +1062,16 @@ update products set category = 'Tees and Totes' where slug = 'tees-and-totes' an
 update products set category = 'Frames and gifts' where slug = 'picture-frames' and category = 'Frames and photos';
 `,
   },
+  {
+    id: '014_team_mail_free_whatsapp',
+    sql: `
+-- ---- Emails to our own team, and WhatsApp messages a person sends with one tap (so Meta is never paid) ----
+alter table messages add column if not exists audience text not null default 'customer';
+alter table messages add column if not exists to_email text;
+alter table messages add column if not exists handled_by text;
+alter table messages drop constraint if exists messages_channel_check;
+alter table messages add constraint messages_channel_check check (channel in ('whatsapp','sms','demo','email','whatsapp_manual'));
+create index if not exists messages_outbox_idx on messages (id) where status = 'to_send';
+`,
+  },
 ];

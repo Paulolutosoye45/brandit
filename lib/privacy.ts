@@ -73,6 +73,8 @@ export async function deleteAccount(customerId: string): Promise<DeleteResult> {
     await q.query("update orders set status = 'cancelled' where customer_id = $1 and status in ('draft','awaiting_payment')", [customerId]);
     await q.query("update orders set address = case when address is null then null else jsonb_build_object('area', address->>'area') end where customer_id = $1", [customerId]);
     await q.query("update messages set to_phone = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
+    // The emails we sent our own team about this customer's orders carry their name, phone and email. They go too.
+    await q.query("update messages set body = '[removed]', vars = '{}', to_email = null where audience = 'team' and order_id in (select id from orders where customer_id = $1)", [customerId]);
     await q.query("update reviews set body = null, public_ok = false, featured = false where order_id in (select id from orders where customer_id = $1)", [customerId]);
     await q.query("update deliveries set last_lat = null, last_lng = null, last_accuracy_m = null, last_ping_at = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
     // A company the person owns passes to the member who has been there longest.
@@ -86,6 +88,13 @@ export async function deleteAccount(customerId: string): Promise<DeleteResult> {
     await q.query("update orders set pay_note = null where customer_id = $1", [customerId]);
     await q.query("update payments set payer_name = null, payer_email = null where order_id in (select id from orders where customer_id = $1)", [customerId]);
     await q.query("delete from reminders where customer_id = $1", [customerId]);
+    // The team's emails about their custom requests and event plans carry what they wrote. They go before the requests are blanked.
+    await q.query(
+      `update messages set body = '[removed]', vars = '{}', to_email = null
+       where audience = 'team' and template in ('team_custom_request', 'team_event_plan')
+         and exists (select 1 from custom_requests r where messages.vars->>'link' like ('%/console/custom/' || r.id::text)
+                     and (r.customer_id = $1 or r.phone = any($2::text[]) or ($3::text is not null and lower(r.email) = lower($3::text))))`,
+      [customerId, mine, c.email ?? null]);
     // Custom requests: the person and everything they wrote go. Our prices stay for the accounts. Open ones are closed.
     await q.query(
       `update custom_requests set name = 'Deleted customer', phone = 'deleted', email = null, title = 'Deleted request', details = 'Deleted at the customer''s request.',

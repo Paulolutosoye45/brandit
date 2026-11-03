@@ -1,4 +1,5 @@
 import { sendReceiptEmail } from './receipts';
+import { notifyTeamOrderPaid } from './teamNotify';
 import { query, one, tx, type Q } from './db';
 import { getProductById, getRules, zoneForArea } from './catalog';
 import { getSettings } from './settings';
@@ -497,6 +498,8 @@ export async function confirmPayment(p: { reference: string; amountKobo: number;
     try { await (await import('./studio/inOrder')).applyStudioLines(order.id); } catch (e) { console.error('[brandit] could not start the Studio design:', (e as Error)?.message ?? e); }
   }
   if (!result.duplicate) await sendReceiptEmail(order.id).catch((e) => console.error('[brandit] receipt email failed:', e?.message ?? e));
+  // The team hears about every paid order by email. Best effort: a failed email waits in Messages and never undoes a payment.
+  if (!result.duplicate) await notifyTeamOrderPaid(order.id).catch((e) => console.error('[brandit] team order email failed:', e?.message ?? e));
   return { ok: true, orderId: order.id, duplicate: result.duplicate };
 }
 

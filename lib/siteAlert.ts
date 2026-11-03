@@ -2,12 +2,13 @@
  * Tells the owner about the few things that must never wait until someone happens to look:
  * a payment Paystack took that we could not match to an order, a database that will not open, a backup that failed.
  *
- * It sends one short message to ALERT_PHONE (WhatsApp, or SMS if WhatsApp is not set up or fails) and also records the
+ * It sends one short email to the team addresses and one short message to ALERT_PHONE (WhatsApp, or SMS if WhatsApp is not set up or fails) and also records the
  * problem in Sentry. It does not use the database, so it still works when the database is the thing that broke.
  * The same problem is sent at most once every 30 minutes, so a bad hour is one message, not two hundred.
  * It never throws: an alert that fails must not make the original problem worse.
  */
 import { sendStaffNow } from './messages';
+import { emailOn } from './email';
 import { reportError, scrub } from './errorReport';
 
 export const ALERT_REPEAT_MINUTES = 30;
@@ -27,7 +28,7 @@ export type SiteAlert = {
 };
 export type SiteAlertResult = {
   sent: boolean;
-  channel: 'whatsapp' | 'sms' | 'none';
+  channel: 'whatsapp' | 'sms' | 'email' | 'none';
   skipped?: 'repeat' | 'no-number' | 'no-channel';
   error?: string;
 };
@@ -46,14 +47,14 @@ export async function siteAlert(a: SiteAlert, env: NodeJS.ProcessEnv = process.e
     await reportError(a.error ?? new Error(what), { routePath: `alert: ${a.key}`, routeType: 'alert' }, env, doFetch, now).catch(() => false);
 
     const phone = env.ALERT_PHONE?.trim();
-    if (!phone) return { sent: false, channel: 'none', skipped: 'no-number' };
+    if (!phone && !emailOn(env)) return { sent: false, channel: 'none', skipped: 'no-number' };
     const wait = (a.repeatMinutes ?? ALERT_REPEAT_MINUTES) * 60_000;
     const before = lastSent.get(a.key);
     if (before !== undefined && now - before < wait) return { sent: false, channel: 'none', skipped: 'repeat' };
     lastSent.set(a.key, now);
     if (lastSent.size > 200) for (const [k, t] of lastSent) if (now - t > 86_400_000) lastSent.delete(k);
 
-    const r = await sendStaffNow(phone, 'site_alert', { what }, env, doFetch);
+    const r = await sendStaffNow(phone || null, 'site_alert', { what }, env, doFetch);
     if (!r.ok) {
       console.error(`[brandit] could not send the alert by phone: ${r.error}`);
       return { sent: false, channel: 'none', skipped: /Neither/.test(r.error ?? '') ? 'no-channel' : undefined, error: r.error };

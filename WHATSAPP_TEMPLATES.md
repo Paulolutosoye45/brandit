@@ -1,5 +1,7 @@
 # WhatsApp message templates
 
+**You do not need this file to run Brandit.** By default Brandit does not use the paid WhatsApp Business Platform: customers are emailed, and WhatsApp messages wait in the console under "WhatsApp to send" for a person to tap. Meta charges for every message sent through its platform. Use this list only if you later choose to pay Meta and set `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
+
 Submit these in Meta Business Manager, WhatsApp Manager, Message templates. For each one choose **Utility**, language **English** (the Pidgin versions are also submitted under English, because Meta has no Pidgin option), and paste the body exactly as shown. Add the example values when Meta asks for samples.
 
 Meta does not accept a template that starts or ends with a placeholder, so where that happens this list adds "Brandit: " at the start or "Thank you." at the end. Paste the text as shown. Each placeholder is filled with one line of text.

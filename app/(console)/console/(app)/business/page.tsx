@@ -41,6 +41,11 @@ export default async function BusinessPage(props: { searchParams: Promise<{ e?: 
           <div><label className="label" htmlFor="hours">Opening hours</label><input id="hours" name="hours" defaultValue={f.hours} placeholder="Monday to Saturday, 8am to 6pm" className="field" maxLength={120} /><p className="mt-1 text-[14px] text-muted">Blank uses “{shown.hours}”.</p></div>
           <div><label className="label" htmlFor="reply_within">We reply within</label><input id="reply_within" name="reply_within" defaultValue={f.reply_within} placeholder="15 minutes" className="field" maxLength={60} /><p className="mt-1 text-[14px] text-muted">Only promise what you keep. Blank uses “{shown.replyWithin}”.</p></div>
         </div>
+        <div>
+          <label className="label" htmlFor="alert_emails">Send team alerts to</label>
+          <textarea id="alert_emails" name="alert_emails" rows={2} defaultValue={f.alert_emails} placeholder="hello@thebrandit.ng, sales@thebrandit.ng" className="field py-3" maxLength={300} {...bad('alert_emails')} />
+          <p className="mt-1 text-[14px] text-muted">One email goes to every address here when a customer pays, sends a custom request or an event plan, or reports a problem, and when a job is at risk of being late. Separate addresses with commas. {f.alert_emails ? '' : `Blank sends to ${shown.alertEmails.join(' and ')}.`} Replying to an alert writes to the customer.</p>
+        </div>
         <div className="rounded-md2 border border-line bg-paper2 p-4">
           <label className="flex min-h-[44px] items-start gap-3"><input type="checkbox" name="legal_reviewed" defaultChecked={f.legal_reviewed || shown.legalReviewed} className="mt-1.5 h-5 w-5" /><span><span className="font-bold">A Nigerian lawyer has reviewed the Terms, Privacy and Refunds pages.</span><span className="block text-[14px] text-muted">Until this is ticked, those pages carry a “draft for legal review” notice. Tick it only once it is true.</span></span></label>
         </div>
@@ -51,6 +56,7 @@ export default async function BusinessPage(props: { searchParams: Promise<{ e?: 
         <p className="text-muted">WhatsApp: {shown.whatsapp ? `+${shown.whatsapp}` : 'not shown'} · Phone: {shown.phone ?? 'not shown'} · Email: {shown.email ?? 'not shown'}</p>
         <p className="text-muted">Address: {shown.address ?? 'not shown'}</p>
         <p className="text-muted">“A person answers, {shown.hours}. We reply within {shown.replyWithin}.”</p>
+        <p className="text-muted">Team alerts go to: {shown.alertEmails.join(', ')}</p>
       </div>
     </div>
   );

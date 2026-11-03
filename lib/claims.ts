@@ -2,6 +2,7 @@ import { query, one, tx } from './db';
 import { getSettings } from './settings';
 import { refundPayment } from './payments';
 import { appUrl, flushMessages, queueMessage } from './messages';
+import { notifyTeamClaim } from './teamNotify';
 import { moveJob, JobError, type Actor } from './jobs';
 import { can } from './permissions';
 import { naira } from './money';
@@ -23,6 +24,7 @@ export async function createClaim(orderToken: string, d: { kind: 'wrong_print' |
     "insert into claims (order_id, kind, source, description, photo_file_id, order_item_id) values ($1,$2,'customer',$3,$4,$5) returning id",
     [o.id, d.kind, d.description.trim().slice(0, 1000), d.photoFileId ?? null, itemId],
   );
+  await notifyTeamClaim(r!.id).catch((e) => console.error('[brandit] team problem email failed:', e?.message ?? e));
   return { ok: true, id: r!.id };
 }
 

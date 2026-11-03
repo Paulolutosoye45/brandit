@@ -11,7 +11,7 @@ It assumes thebrandit.ng is already running an earlier version on your host (Ren
 
 ## 2. Put the new code on the host
 
-Deploy it the way you deployed before (push to the repository your host watches, or upload the project). The build runs `npm ci` and `npm run build`. On the first start the database upgrades itself, once, in a few seconds, up to migration 013 (basket and order lines, Studio in the order, console tables, reminders, company accounts, product groups). The migrations add tables and columns. The only existing data they change are the old product group names ("Cards", "Flyers and posters"…), which become the six new groups unless you had typed your own names.
+Deploy it the way you deployed before (push to the repository your host watches, or upload the project). The build runs `npm ci` and `npm run build`. On the first start the database upgrades itself, once, in a few seconds, up to migration 014 (basket and order lines, Studio in the order, console tables, reminders, company accounts, product groups, team alert emails and the free WhatsApp list). The migrations add tables and columns. The only existing data they change are the old product group names ("Cards", "Flyers and posters"…), which become the six new groups unless you had typed your own names.
 
 ## 3. Check it (10 minutes)
 
@@ -39,9 +39,16 @@ Then in the console:
 | **Team** | Add the people who will use **New order** (support and production lead can build orders from WhatsApp chats). Everyone has their own PIN. |
 | **FAQ and policies** | Have a lawyer read the Terms, Privacy and Refunds pages. Paste their version in here (the old text is kept), then tick the lawyer box under **Business details**. |
 
-## 5. WhatsApp messages (do this on day one; it takes Meta a few days)
+## 5. Messages to customers and alerts to your team (free: no Meta account)
 
-Open `WHATSAPP_TEMPLATES.md` and submit the four templates that are new in this version: `brandit_pay_link` (category **Utility**), and `brandit_reorder_reminder`, `brandit_reorder_weekly` and `brandit_sample_credit` (category **Marketing**), plus their `_pcm` versions if you use Pidgin. Until Meta approves a message, it goes by SMS if Termii is set up, and otherwise it is only logged. Nothing breaks.
+Brandit does not use Meta's paid WhatsApp platform, so there is nothing to submit to Meta and no per-message bill.
+
+1. **Email.** Set `RESEND_API_KEY` and `EMAIL_FROM` (for example `Brandit <hello@thebrandit.ng>`) and verify thebrandit.ng in Resend. Customers who gave an email now get every order update by email by themselves, and your team gets the alert emails below.
+2. **Leave `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` empty.** If they are set, Brandit sends through Meta and Meta charges for each message. **Setup** warns you if they are.
+3. **Team alerts.** One email goes to `hello@thebrandit.ng` and `sales@thebrandit.ng` when an order is paid, a custom request or event plan arrives, or a customer reports a problem, and when a job is at risk of being late or the site needs attention. To use other addresses, type them in **Business details**, "Send team alerts to". Replying to an alert writes to the customer. Press **Test the connections** on **Setup** to see one arrive.
+4. **WhatsApp, by a person, in one tap.** Messages that need a customer to act (a proof to approve, a file problem, a price to accept, delivery on its way) and every message for a customer without an email wait in the console under **WhatsApp to send**, with a number on the menu. Tap **Send on WhatsApp**: WhatsApp opens with the customer's number and the message already typed. Press send. Use the free WhatsApp Business app on the shop phone, or WhatsApp Web on a computer. Anything unsent after 3 days is dropped. Reminders and offers sit in a separate "Optional" list you can skip in one tap.
+5. **Who does it.** Support, the production lead, the file desk and the admin can all see the list. Look at it a few times a day and after each proof goes out.
+6. **Email limits.** Resend's free plan allows 100 emails a day and 3,000 a month. A busy order is about 8 emails (receipt, updates, and a team alert), so expect to need Resend's paid plan once you pass roughly 10 orders a day.
 
 ## 6. What you still need from outside
 
@@ -56,7 +63,7 @@ These are the only things that cannot be done for you. The shop works without th
 | Admin email and PIN | The first console login | Required |
 | Your domain | thebrandit.ng | Required |
 | Termii | SMS codes and fallback | Optional |
-| WhatsApp Business Platform | Automatic order messages | Optional (SMS or no message) |
+| WhatsApp Business Platform | Automatic WhatsApp messages | Not needed. Paid by the message, so Brandit uses email and the free "WhatsApp to send" list instead |
 | A picture-maker key | Brandit Studio | Optional (Studio stays closed) |
 
 ## 7. If something goes wrong

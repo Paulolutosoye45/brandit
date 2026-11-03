@@ -31,6 +31,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   area('Orders', [
     { href: '/console/queue', label: 'Job queue', show: true, badge: counts?.files },
     { href: '/console/orders', label: 'All orders', show: R('see_contact') || R('dispatch') },
+    { href: '/console/whatsapp', label: 'WhatsApp to send', show: !floor && R('see_contact'), badge: counts?.whatsapp },
     { href: '/console/orders/new', label: 'New order', show: R('build_order') },
     { href: '/console/custom', label: 'Custom quotes', show: R('quote_custom'), badge: counts?.quotes },
     { href: '/console/promise', label: 'Problems', show: R('claims'), badge: counts?.claims },

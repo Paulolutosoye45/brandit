@@ -1,5 +1,5 @@
 import { one, query, tx } from '../db';
-import { appUrl, flushMessages, queueMessage } from '../messages';
+import { appUrl, flushMessages, queueMessage, queueStaffAlert } from '../messages';
 import { naira } from '../money';
 import { contactPhone } from '../identity';
 import type { TemplateKey } from '../../content/messages';
@@ -32,10 +32,9 @@ export const notifyCredit = (projectId: string, amountKobo: number, days: number
 
 /** Tell the team a design is waiting for a person to check. */
 export async function notifyReviewRequested(projectId: string) {
-  const alertPhone = process.env.ALERT_PHONE ?? null;
-  if (!alertPhone) return false;
   const p = await one<{ title: string }>('select title from studio_projects where id = $1', [projectId]);
-  await tx(async (q) => { await queueMessage(q, { toPhone: alertPhone, template: 'studio_review_alert', vars: { title: (p?.title || 'A design').slice(0, 60), link: `${appUrl()}/console/studio/review` } }); });
+  // The team's email always gets this; the alert phone too when one is set.
+  await tx(async (q) => { await queueStaffAlert(q, 'studio_review_alert', { title: (p?.title || 'A design').slice(0, 60), link: `${appUrl()}/console/studio/review` }); });
   await flushMessages(5).catch(() => {});
   return true;
 }

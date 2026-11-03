@@ -1,7 +1,7 @@
 import { query, tx } from './db';
 import { getSettings } from './settings';
 import { refundPayment } from './payments';
-import { appUrl, flushMessages, queueMessage } from './messages';
+import { appUrl, flushMessages, queueMessage, queueStaffAlert } from './messages';
 import { describeArrival } from './time';
 import { STAGE_LABEL, type Stage } from './types';
 import { deleteFile } from './storage';
@@ -36,7 +36,6 @@ export async function runSweep(now = new Date()) {
     `select j.id, j.stage, j.at_risk, o.id as order_id, o.code, o.promised_at from jobs j join orders o on o.id = j.order_id
      where j.stage <> 'delivered' and not j.clock_paused and o.promised_at is not null`,
   );
-  const alertPhone = process.env.ALERT_PHONE ?? null;
   for (const j of jobs) {
     const left = new Date(j.promised_at).getTime() - now.getTime();
     const stage = j.stage as Stage;
@@ -45,7 +44,7 @@ export async function runSweep(now = new Date()) {
     if (risky && !j.at_risk) {
       await tx(async (q) => {
         await q.query('update jobs set at_risk = true where id = $1', [j.id]);
-        await queueMessage(q, { orderId: null, toPhone: alertPhone, template: 'at_risk', vars: { code: j.code, arrive: describeArrival(new Date(j.promised_at), now), stage: STAGE_LABEL[stage] } });
+        await queueStaffAlert(q, 'at_risk', { code: j.code, arrive: describeArrival(new Date(j.promised_at), now), stage: STAGE_LABEL[stage] });
       });
       out.atRisk++;
     } else if (!risky && j.at_risk && left > 0) {

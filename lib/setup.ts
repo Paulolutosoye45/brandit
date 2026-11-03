@@ -6,6 +6,7 @@ import { paystackOn } from './payments';
 import { s3On } from './storage';
 import { backupsEnabled, backupStatus } from './backup';
 import { smsOn, whatsappOn } from './messages';
+import { emailOn } from './email';
 import { envProblems, onVercel, databaseUrl, dbHost, isRenderInternal, isStaging } from './envcheck';
 import { paystackMode } from './connections';
 import { parseDsn } from './errorReport';
@@ -91,8 +92,18 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
   if (!demo && !methods.some(([, on]) => on)) add({ id: 'signin-none', group: 'Sign-in', label: 'Customer sign-in', status: 'warn', detail: 'No sign-in method is set up. Customers can still check out as guests.', fix: 'Switch on at least Google or email codes.' });
 
   // Reaching customers
-  const reach = whatsappOn(env) || smsOn(env);
-  add({ id: 'messages', group: 'Messages', label: 'Order updates', status: reach ? 'ok' : demo ? 'info' : 'bad', detail: whatsappOn(env) ? 'WhatsApp Business Platform on.' : smsOn(env) ? 'Sent by SMS.' : 'No way to message customers.', fix: reach ? undefined : 'Set SMS_API_KEY, or the two WHATSAPP_ values, so customers hear about every stage.' });
+  const mailOk = emailOn(env);
+  const reach = whatsappOn(env) || smsOn(env) || mailOk;
+  add({
+    id: 'messages', group: 'Messages', label: 'Order updates',
+    status: reach ? (whatsappOn(env) ? 'warn' : 'ok') : demo ? 'info' : 'bad',
+    detail: whatsappOn(env)
+      ? 'The paid WhatsApp Business Platform is on. Meta charges for every message it sends.'
+      : mailOk
+        ? `Customers with an email get every update by email, free.${smsOn(env) ? ' Those without one get an SMS.' : ''} Messages that need a person on WhatsApp wait under "WhatsApp to send" in the console: one tap opens WhatsApp with the message typed. No Meta fees.`
+        : smsOn(env) ? 'Sent by SMS. Messages for customers without a phone cannot be sent, and WhatsApp messages wait under "WhatsApp to send".' : 'No automatic way to message customers. WhatsApp messages still wait under "WhatsApp to send" for a person to tap. No Meta fees.',
+    fix: whatsappOn(env) ? 'To stop paying Meta, remove WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID and restart. Customers are then emailed, and WhatsApp becomes one tap in the console.' : reach ? undefined : 'Set RESEND_API_KEY and EMAIL_FROM so customers with an email hear about every stage automatically.',
+  });
   const biz = makeBusiness(await businessForm().catch(() => ({})), env);
   add(biz.whatsapp
     ? { id: 'wa', group: 'Messages', label: 'WhatsApp number on the site', status: 'ok', detail: `+${biz.whatsapp}` }
@@ -100,12 +111,15 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
   add(biz.email || biz.phone
     ? { id: 'contact-details', group: 'Messages', label: 'Contact details on the site', status: 'ok', detail: [biz.phone, biz.email].filter(Boolean).join(' · ') }
     : { id: 'contact-details', group: 'Messages', label: 'Contact details on the site', status: 'info', detail: 'No phone number or email is shown on the contact page.', fix: 'Add them in Settings, Business details if you want customers to see them.' });
+  add(mailOk
+    ? { id: 'team-alerts', group: 'Messages', label: 'Order alerts by email', status: 'ok', detail: `An email to ${biz.alertEmails.join(', ')} when an order is paid, a custom request or event plan arrives, a problem is reported or a job is at risk. Change the addresses in Business details. "Test the connections" below sends one.` }
+    : { id: 'team-alerts', group: 'Messages', label: 'Order alerts by email', status: demo ? 'info' : 'warn', detail: `Nobody is emailed when an order is paid. It would go to ${biz.alertEmails.join(', ')}, but email is not set up.`, fix: 'Set RESEND_API_KEY and EMAIL_FROM (an address on your own domain, like Brandit <hello@thebrandit.ng>).' });
   const phoneReach = whatsappOn(env) || smsOn(env);
   add(env.ALERT_PHONE
     ? phoneReach
       ? { id: 'alert', group: 'Messages', label: 'Alerts to your phone', status: 'ok', detail: 'Jobs at risk of being late, payments we could not apply, a database outage, a failed backup and failed five-minute checks are sent to the alert number. Use "Test the connections" below to see one arrive.' }
       : { id: 'alert', group: 'Messages', label: 'Alerts to your phone', status: 'bad', detail: 'ALERT_PHONE is set, but neither SMS nor WhatsApp is, so no alert can be sent.', fix: 'Set SMS_API_KEY, or the two WHATSAPP values.' }
-    : { id: 'alert', group: 'Messages', label: 'Alerts to your phone', status: demo || staging ? 'info' : 'warn', detail: 'No alert number. A failed payment, a database outage or a failed backup would only show here and in Sentry, and late jobs only in the queue.', fix: 'Set ALERT_PHONE to your own number, with the country code, for example 2348031234567.' });
+    : { id: 'alert', group: 'Messages', label: 'Alerts to your phone', status: demo || staging || mailOk ? 'info' : 'warn', detail: mailOk ? 'No alert number. Alerts reach the team by email instead. A phone alert is optional and needs SMS (WhatsApp would be charged by Meta).' : 'No alert number. A failed payment, a database outage or a failed backup would only show here and in Sentry, and late jobs only in the queue.', fix: mailOk ? undefined : 'Set ALERT_PHONE to your own number, with the country code, for example 2348031234567, and set SMS_API_KEY. Or set up email (RESEND_API_KEY and EMAIL_FROM) so alerts reach the team by email.' });
 
   // Abuse limits
   const hops = env.TRUSTED_PROXY_HOPS;

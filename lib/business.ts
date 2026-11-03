@@ -1,6 +1,7 @@
 import { one, query } from './db';
 import { normalizePhone } from './phone';
 import { SITE } from './site';
+import { MAX_TEAM_EMAILS, parseEmails, teamEmailsFrom } from './teamAlerts';
 
 /*
  * The facts about the business that pages quote: the WhatsApp number, phone, email, address, opening hours and how fast
@@ -18,6 +19,8 @@ export type BusinessInput = {
   address: string;
   hours: string;
   reply_within: string;
+  /** Where emails about new orders, custom requests and problems go. Blank means hello@thebrandit.ng and sales@thebrandit.ng. */
+  alert_emails: string;
   legal_reviewed: boolean;
 };
 export type Business = {
@@ -30,10 +33,11 @@ export type Business = {
   address: string | null;
   hours: string;
   replyWithin: string;
+  alertEmails: string[];
   legalReviewed: boolean;
 };
 
-const EMPTY: BusinessInput = { whatsapp: '', phone: '', email: '', address: '', hours: '', reply_within: '', legal_reviewed: false };
+const EMPTY: BusinessInput = { whatsapp: '', phone: '', email: '', address: '', hours: '', reply_within: '', alert_emails: '', legal_reviewed: false };
 
 let cache: { at: number; v: Partial<BusinessInput> } | null = null;
 const TTL_MS = 5_000;
@@ -68,6 +72,7 @@ export function makeBusiness(v: Partial<BusinessInput>, env: NodeJS.ProcessEnv =
     address: text(v.address) || text(env.NEXT_PUBLIC_BUSINESS_ADDRESS) || null,
     hours: text(v.hours) || SITE.hours,
     replyWithin: text(v.reply_within) || SITE.replyWithin,
+    alertEmails: teamEmailsFrom(v.alert_emails, env),
     legalReviewed: v.legal_reviewed === true || reviewedEnv,
   };
 }
@@ -100,9 +105,12 @@ export function checkBusiness(i: Partial<BusinessInput>): SaveResult {
   if (phone && !/^[+\d][\d\s()+-]{6,}$/.test(phone)) return { ok: false, field: 'phone', error: 'Enter the phone number using digits, spaces and a leading + only.' };
   const email = clean(i.email, 120).toLowerCase();
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return { ok: false, field: 'email', error: 'Enter a full email address, like hello@thebrandit.ng.' };
+  const alerts = parseEmails(i.alert_emails);
+  if (alerts.bad.length) return { ok: false, field: 'alert_emails', error: `${alerts.bad.slice(0, 2).join(', ')} is not a full email address. Separate several addresses with commas, like hello@thebrandit.ng, sales@thebrandit.ng.` };
+  if (alerts.ok.length > MAX_TEAM_EMAILS) return { ok: false, field: 'alert_emails', error: `Use at most ${MAX_TEAM_EMAILS} alert addresses.` };
   const hours = clean(i.hours, 120);
   const reply = clean(i.reply_within, 60);
-  return { ok: true, value: { whatsapp, phone, email, address: clean(i.address, 240), hours, reply_within: reply, legal_reviewed: i.legal_reviewed === true } };
+  return { ok: true, value: { whatsapp, phone, email, address: clean(i.address, 240), hours, reply_within: reply, alert_emails: alerts.ok.join(', '), legal_reviewed: i.legal_reviewed === true } };
 }
 
 export async function saveBusiness(i: Partial<BusinessInput>): Promise<SaveResult> {

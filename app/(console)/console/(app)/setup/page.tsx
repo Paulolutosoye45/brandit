@@ -25,7 +25,7 @@ export default async function Setup(props: { searchParams: Promise<{ e?: string;
   const chain = (await headers()).get('x-forwarded-for');
   const hops = process.env.TRUSTED_PROXY_HOPS ?? '';
   return (
-    <div className="grid max-w-[900px] gap-6">
+    <div className="grid max-w-[900px] grid-cols-1 gap-6">
       <div><h1 className="text-[34px]">Setup</h1><p className="text-muted">What is switched on, and what is still missing. Work from the top; anything marked &ldquo;Fix before launch&rdquo; stops customers from ordering or paying.</p></div>
       <div className={`rounded-md2 px-5 py-4 ${problems ? 'bg-bad-tint' : warnings ? 'bg-warn-tint' : 'bg-good-tint'}`} role="status">
         <p className="font-display text-[24px] font-extrabold leading-tight">{problems ? `${problems} thing${problems > 1 ? 's' : ''} to fix before launch` : warnings ? `Ready to launch, with ${warnings} thing${warnings > 1 ? 's' : ''} to check` : 'Everything checks out'}</p>
@@ -38,9 +38,9 @@ export default async function Setup(props: { searchParams: Promise<{ e?: string;
             {checks.filter((c) => c.group === g).map((c) => {
               const [cls, word] = LOOK[c.status];
               return (
-                <li key={c.id} className="grid gap-1 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
+                <li key={c.id} className="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
                   <div className="flex flex-wrap items-center gap-2"><span className="font-bold">{c.label}</span><span className={`pill ${cls}`}>{word}</span></div>
-                  <div className="text-[15px]"><p>{c.detail}</p>{c.fix && <p className="mt-1 text-muted">{c.fix}</p>}</div>
+                  <div className="text-[15px] [overflow-wrap:anywhere]"><p>{c.detail}</p>{c.fix && <p className="mt-1 text-muted">{c.fix}</p>}</div>
                 </li>
               );
             })}
@@ -71,7 +71,7 @@ export default async function Setup(props: { searchParams: Promise<{ e?: string;
           </form>
           <form action={testAlertAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
             <div className="font-bold">Alerts</div>
-            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Send a test alert</button><span className="text-[13px] text-muted">Sends one harmless test error to Sentry and one test message to the alert number, so you see both arrive before a real one is needed.</span></div>
+            <div className="flex flex-wrap items-center gap-3"><button className="btn-secondary btn-sm">Send a test alert</button><span className="text-[13px] text-muted">Sends one harmless test error to Sentry, one test email to the team addresses (hello@ and sales@ unless you changed them) and one test message to the alert number, so you see them arrive before a real one is needed.</span></div>
           </form>
           <form action={backupNowAction} className="grid gap-2 p-4 sm:grid-cols-[220px_1fr] sm:gap-4">
             <div className="font-bold">Backup</div>

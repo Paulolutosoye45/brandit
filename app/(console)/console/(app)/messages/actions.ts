@@ -23,10 +23,11 @@ export async function testMessageAction(fd: FormData) {
   const phone = normalizePhone(s(fd, 'phone'));
   if (!phone) return back({ e: 'Enter your own mobile number, like 0803 123 4567.' }, `#t-${key}`);
   if (limited(`msgtest:${staff.id}`, 6, 10 * 60_000)) return back({ e: 'That is enough tests for now. Wait a few minutes.' }, `#t-${key}`);
-  const r = await sendStaffNow(phone, key, sampleVars(key));
+  // A test goes to the phone typed here only, never to the team's mailbox.
+  const r = await sendStaffNow(phone, key, sampleVars(key), { ...process.env, RESEND_API_KEY: undefined });
   await audit({ id: staff.id, name: staff.name }, { area: 'settings', action: 'message_test', target: key, summary: `Sent a test of “${key.replace(/_/g, ' ')}”${r.ok ? ` by ${r.channel}` : ' (it did not send)'}` });
   if (r.ok) return back({ ok: `Sent by ${r.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} to ${phone}.${r.error ? ` Note: ${r.error}` : ''}` }, `#t-${key}`);
-  return back({ e: `Not sent: ${r.error ?? 'unknown problem'}. ${r.error?.includes('Neither') ? 'Connect WhatsApp or SMS first (Connections).' : ''}` }, `#t-${key}`);
+  return back({ e: `Not sent: ${r.error ?? 'unknown problem'}. ${r.error?.includes('Neither') ? 'This site sends no automatic WhatsApp (that is what keeps Meta fees at zero) and SMS is not connected. Customers get this message by email, or it waits under WhatsApp to send for a person to tap. Connect SMS (Connections) if you want a phone test.' : ''}` }, `#t-${key}`);
 }
 
 export async function retryMessageAction(fd: FormData) {

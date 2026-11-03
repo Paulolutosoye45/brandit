@@ -1,13 +1,17 @@
 import { appUrl } from './messages';
 
 /** Transactional email through Resend. Set RESEND_API_KEY and EMAIL_FROM (for example "Brandit <hello@brandit.ng>"). */
-export const emailOn = () => !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+export const emailOn = (env: NodeJS.ProcessEnv = process.env) => !!(env.RESEND_API_KEY && env.EMAIL_FROM);
 
-export async function sendEmail(m: { to: string; subject: string; html: string; text: string }): Promise<void> {
-  const res = await fetch('https://api.resend.com/emails', {
+export async function sendEmail(
+  m: { to: string | string[]; subject: string; html: string; text: string; replyTo?: string | null },
+  env: NodeJS.ProcessEnv = process.env,
+  doFetch: typeof fetch = fetch,
+): Promise<void> {
+  const res = await doFetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [m.to], subject: m.subject, html: m.html, text: m.text }),
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: env.EMAIL_FROM, to: Array.isArray(m.to) ? m.to : [m.to], subject: m.subject, html: m.html, text: m.text, ...(m.replyTo ? { reply_to: m.replyTo } : {}) }),
   });
   if (!res.ok) throw new Error(`Email ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }

@@ -2,7 +2,8 @@ import { query, one, tx } from './db';
 import { getSettings } from './settings';
 import { normalizePhone } from './phone';
 import { token } from './password';
-import { appUrl, flushMessages, queueMessage } from './messages';
+import { appUrl, flushMessages, queueMessage, queueTeamAlert } from './messages';
+import { customRequestAlert } from './teamNotify';
 import { putFile, deleteFile } from './storage';
 import { sniffMime } from './inspect';
 import { customProductId } from './productAdmin';
@@ -124,6 +125,8 @@ export async function createCustomRequest(i: CustomInput, files: RefFile[], cust
       const link = `${appUrl()}/custom-order/${tok}`;
       await queueMessage(q, { toPhone: phone, template: 'custom_received', vars: { code, hours: String(s.custom_reply_hours), link } });
       if (process.env.ALERT_PHONE) await queueMessage(q, { toPhone: process.env.ALERT_PHONE, template: 'custom_alert', vars: { code, title, who: name } });
+      // The team is emailed the whole request, so a person can price it without opening the console first.
+      await queueTeamAlert(q, customRequestAlert({ id: r[0].id, code, event: attach?.kind === 'event', title, name, phone, email: email || null, quantityText: clean(i.quantityText, 80) || null, sizeText: clean(i.sizeText, 80) || null, budgetKobo: budget, needBy, files: prepared.length, details }));
       return { id: r[0].id, code, token: tok };
     });
     await flushMessages().catch((e) => console.error('[brandit] custom request messages failed:', e?.message ?? e));

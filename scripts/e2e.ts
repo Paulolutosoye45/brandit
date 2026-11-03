@@ -940,7 +940,7 @@ async function signedIn(name: string) { const s = new Session(); await s.form('/
     const dispatch = new Session();
     await login(dispatch, 'dispatch@brandit.test');
     const clean = (t: string) => !/\bNaN\b|undefined|\[object Object\]/.test(t.replace(/<script[\s\S]*?<\/script>/g, ''));
-    const everything = ['/console/today', '/console/queue', '/console/orders', '/console/orders/new', '/console/custom', '/console/promise', '/console/payments', '/console/products', '/console/stock', '/console/templates', '/console/studio', '/console/customers', '/console/homepage', '/console/campaigns', '/console/coupons', '/console/growth', '/console/reviews', '/console/reports', '/console/business', '/console/rules', '/console/messages', '/console/pages', '/console/pages/faq', '/console/pages/terms', '/console/team', '/console/setup', '/console/activity', '/console/me'];
+    const everything = ['/console/today', '/console/queue', '/console/orders', '/console/orders/new', '/console/custom', '/console/promise', '/console/payments', '/console/products', '/console/stock', '/console/templates', '/console/studio', '/console/customers', '/console/homepage', '/console/campaigns', '/console/coupons', '/console/growth', '/console/reviews', '/console/reports', '/console/business', '/console/rules', '/console/messages', '/console/whatsapp', '/console/pages', '/console/pages/faq', '/console/pages/terms', '/console/team', '/console/setup', '/console/activity', '/console/me'];
     const broken: string[] = [];
     for (const p of everything) { const r = await admin.html(p); if (r.status !== 200 || !clean(r.text)) broken.push(`${p} → ${r.status}`); }
     ok(broken.length === 0, `The admin opens all ${everything.length} console screens without an error${broken.length ? ': ' + broken.join(', ') : ''}`);
@@ -951,20 +951,22 @@ async function signedIn(name: string) { const s = new Session(); await s.form('/
       ok(a.length === 0 && b.length === 0, `${label}${a.length ? ` — should open: ${a.join(', ')}` : ''}${b.length ? ` — should be shut: ${b.join(', ')}` : ''}`);
     };
     await check('Support opens customers, payments, orders and reports, and nothing that changes the shop', sup,
-      ['/console/today', '/console/orders', '/console/orders/new', '/console/custom', '/console/payments', '/console/customers', '/console/reviews', '/console/reports', '/console/me'],
+      ['/console/today', '/console/orders', '/console/orders/new', '/console/custom', '/console/payments', '/console/customers', '/console/reviews', '/console/reports', '/console/whatsapp', '/console/me'],
       ['/console/business', '/console/team', '/console/setup', '/console/pages', '/console/homepage', '/console/products', '/console/stock', '/console/rules', '/console/activity', '/console/coupons', '/console/growth', '/console/messages']);
     await check('The dispatcher opens orders and the queue, and not money or customers', dispatch,
       ['/console/queue', '/console/orders', '/console/me'],
-      ['/console/payments', '/console/customers', '/console/business', '/console/team', '/console/pages', '/console/orders/new', '/console/activity']);
+      ['/console/payments', '/console/customers', '/console/business', '/console/team', '/console/pages', '/console/orders/new', '/console/activity', '/console/whatsapp']);
     await check('The production lead runs the shop but not the team, the business details or the activity log', lead,
-      ['/console/products', '/console/stock', '/console/payments', '/console/customers', '/console/pages', '/console/homepage', '/console/orders/new', '/console/rules'],
+      ['/console/products', '/console/stock', '/console/payments', '/console/customers', '/console/pages', '/console/homepage', '/console/orders/new', '/console/rules', '/console/whatsapp'],
       ['/console/team', '/console/business', '/console/setup', '/console/activity']);
-    await check('The file desk sees neither money nor customers', files, ['/console/queue', '/console/me'], ['/console/payments', '/console/customers', '/console/orders/new', '/console/business']);
+    await check('The file desk sees neither money nor customers', files, ['/console/queue', '/console/whatsapp', '/console/me'], ['/console/payments', '/console/customers', '/console/orders/new', '/console/business']);
 
     // Business details
     const badBiz = await admin.form('/console/business', 'Save business details', { whatsapp: '123', phone: '', email: '', address: '', hours: '', reply_within: '' });
     ok(/e=/.test(badBiz.loc), 'A WhatsApp number that cannot be right is refused with a reason');
-    const goodBiz = await admin.form('/console/business', 'Save business details', { whatsapp: '0803 555 0100', phone: '', email: 'hello@thebrandit.ng', address: '12 Allen Avenue, Ikeja', hours: 'Mon to Fri, 9am to 5pm', reply_within: 'an hour' });
+    const badAlerts = await admin.form('/console/business', 'Save business details', { whatsapp: '0803 555 0100', phone: '', email: '', address: '', hours: '', reply_within: '', alert_emails: 'hello@thebrandit.ng, not-an-email' });
+    ok(/e=/.test(badAlerts.loc) && /field=alert_emails/.test(badAlerts.loc), 'An alert address that is not an email is refused, with the field named');
+    const goodBiz = await admin.form('/console/business', 'Save business details', { whatsapp: '0803 555 0100', phone: '', email: 'hello@thebrandit.ng', address: '12 Allen Avenue, Ikeja', hours: 'Mon to Fri, 9am to 5pm', reply_within: 'an hour', alert_emails: 'Hello@TheBrandit.ng, sales@thebrandit.ng' });
     ok(/ok=/.test(goodBiz.loc), 'The admin changes the WhatsApp number, address and hours without a developer');
     const contact = words((await guest.html('/contact')).text);
     ok(contact.includes('12 Allen Avenue, Ikeja') && contact.includes('Mon to Fri, 9am to 5pm'), 'The contact page shows the new address and hours straight away');
@@ -1014,6 +1016,44 @@ async function signedIn(name: string) { const s = new Session(); await s.form('/
     // Messages
     const msgs = words((await admin.html('/console/messages')).text);
     ok(['Order updates', 'Quotes and reminders', 'sample_credit', 'pay_link'].every((x) => msgs.includes(x) || msgs.toLowerCase().includes(x.replace('_', ' '))), 'The messages screen lists every message, including the new reminders and pay link');
+
+    // Team alert emails and the free WhatsApp list
+    section('Team alert emails and free WhatsApp');
+    const bizPage = (await admin.html('/console/business')).text;
+    ok(/name="alert_emails"/.test(bizPage) && bizPage.includes('hello@thebrandit.ng, sales@thebrandit.ng'), 'Business details has a "Send team alerts to" field holding hello@ and sales@');
+    ok(words(bizPage).includes('Team alerts go to: hello@thebrandit.ng, sales@thebrandit.ng'), 'The page repeats where alerts will go');
+    const setupText = words((await admin.html('/console/setup')).text);
+    ok(setupText.includes('Order alerts by email'), 'Setup lists the team alert emails');
+    ok(/No Meta fees|Meta charges/.test(setupText) && setupText.includes('WhatsApp to send'), 'Setup says in plain words that WhatsApp is free and where the messages wait');
+    const alertRows = await admin.html('/console/messages');
+    ok(words(alertRows.text).includes('team order paid') && words(alertRows.text).includes('hello@thebrandit.ng,sales@thebrandit.ng'), 'Messages shows the team email for each paid order, with who it was addressed to');
+
+    const wa = await admin.html('/console/whatsapp');
+    const waText = words(wa.text);
+    ok(wa.status === 200 && waText.includes('WhatsApp to send') && waText.includes('does not pay Meta'), 'The WhatsApp to send page explains the free way');
+    const links = [...wa.text.matchAll(/href="(https:\/\/wa\.me\/\d{10,15}\?text=[^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&'));
+    ok(links.length > 0, `Paid orders leave ready-to-send WhatsApp messages (${links.length} waiting)`);
+    ok(links.every((l) => !/%7B|undefined|NaN/.test(l)) && links.some((l) => decodeURIComponent(l).includes('Track it here')), 'Each link opens WhatsApp with the customer\'s number and the message already written');
+    ok(words((await admin.html('/console/today')).text).includes('WhatsApp to send'), 'The menu shows WhatsApp to send');
+    ok((await guest.req('/console/whatsapp')).status >= 300, 'A visitor cannot open it');
+
+    const firstId = /<form[^>]*>(?:(?!<\/form>)[\s\S])*?name="id" value="(\d+)"(?:(?!<\/form>)[\s\S])*?Already sent/.exec(wa.text)?.[1] ?? '';
+    ok(!!firstId, 'Each waiting message has an "Already sent" button');
+    const sent = await admin.form('/console/whatsapp', 'Already sent', {});
+    ok(/ok=Marked as sent/.test(sent.loc), 'Marking a message sent works');
+    const after = words((await admin.html('/console/whatsapp')).text);
+    ok(after.includes('Done recently') && /sent by \w+/.test(after), 'It moves to "Done recently" with the name of who sent it');
+    const undone = await admin.form('/console/whatsapp', 'Put back', {});
+    ok(/ok=Put back/.test(undone.loc), 'A mistake can be put back');
+    const skipped = await admin.form('/console/whatsapp', 'Skip', {});
+    ok(/ok=Skipped/.test(skipped.loc), 'A message can be skipped');
+    const again = (await admin.html('/console/whatsapp')).text;
+    if (again.includes('Skip all of these')) {
+      const bulk = await admin.form('/console/whatsapp', 'Skip all of these', {});
+      ok(/ok=Skipped \d+ reminder/.test(bulk.loc), 'Reminders and offers can be skipped in one tap');
+    }
+    ok((await sup.html('/console/whatsapp')).status === 200, 'Support can send WhatsApp messages too');
+    ok(!words((await admin.html('/console/whatsapp')).text).includes('facebook'), 'Nothing on the page needs a Meta account');
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
