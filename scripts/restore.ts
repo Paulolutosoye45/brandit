@@ -15,7 +15,8 @@ import fs from 'node:fs';
 import { Client } from 'pg';
 import { decodeBackup, createSchema, restoreBackup, runRestoreTestOn, totalRows, type Target } from '../lib/backup';
 import { getNamed, listNamed, s3On } from '../lib/storage';
-import { dbHint, dbSsl } from '../lib/envcheck';
+import { dbHint, dbHost, dbSsl, isSupabaseHost, sessionModeUrl } from '../lib/envcheck';
+import { lockDownTables } from '../lib/rls';
 
 const args = process.argv.slice(2);
 const flag = (n: string) => args.includes(`--${n}`);
@@ -59,7 +60,9 @@ async function main() {
     process.exit(r.ok ? 0 : 1);
   }
 
-  const into = val('into');
+  const into0 = val('into');
+  // A Supabase pooler address on port 6543 is switched to 5432: the restore must run in session mode.
+  const into = into0 && sessionModeUrl(into0.trim());
   if (!into) return fail('Say where to put it:  --into "postgresql://..."   (or use --check to only test it).');
   if (!flag('yes')) return fail(`This would REPLACE everything in that database with the backup. Run the same command again with --yes to go ahead.`);
   const c = new Client({ connectionString: into, ssl: dbSsl({ ...process.env, DATABASE_URL: into } as any), connectionTimeoutMillis: 15_000 });
@@ -70,6 +73,8 @@ async function main() {
     if (tables === 0) { console.log('The database is empty: creating the tables first...'); await createSchema(t, backup); }
     console.log('Restoring (all or nothing)...');
     const r = await restoreBackup(t, backup);
+    // On Supabase the tables are closed to its public API straight away, not only when the site next starts.
+    if (isSupabaseHost(dbHost(into))) { await lockDownTables(t); console.log('Tables locked against Supabase\'s public API.'); }
     console.log(`\nDone. ${r.rows.toLocaleString('en-NG')} rows restored into ${r.tables} tables, every link between tables checked, the money adds up.`);
     console.log('Next: point the site\'s DATABASE_URL at this database, redeploy, then run  npm run smoke -- https://thebrandit.ng\n');
   } catch (e) {

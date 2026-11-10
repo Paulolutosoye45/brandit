@@ -1,5 +1,6 @@
 import { MIGRATIONS } from './schema';
-import { isDemoEnv, databaseUrl, dbSsl } from './envcheck';
+import { isDemoEnv, databaseUrl, dbSsl, poolSettings, rlsWanted, isPoolFull } from './envcheck';
+import { lockDownTables } from './rls';
 
 export type Row = Record<string, any>;
 export interface Q {
@@ -18,6 +19,20 @@ interface Driver extends Q {
  */
 export function attachPoolGuards(pool: { on(event: 'error', fn: (e: Error) => void): unknown }) {
   pool.on('error', (e) => console.error(`[brandit] database connection error (it will reconnect): ${e.message}`));
+}
+
+/**
+ * A shared pooler (Supabase's) refuses a new connection when every connection it may hand out is taken, for example for a
+ * minute while an old and a new copy of the server overlap during a deploy. That answer comes before any query is sent, so
+ * trying again a moment later is safe, and is better than showing a customer an error.
+ */
+export async function retryWhenPoolFull<T>(fn: () => Promise<T>, waitMs = 300): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await fn(); } catch (e) {
+      if (attempt >= 3 || !isPoolFull(e)) throw e;
+      await new Promise((r) => setTimeout(r, waitMs * (attempt + 1)));
+    }
+  }
 }
 
 const g = globalThis as unknown as { __brandit_db?: Promise<Driver> };
@@ -39,16 +54,36 @@ async function open(): Promise<Driver> {
     const { Pool } = await import('pg');
     const ssl = dbSsl(process.env);
     // Vercel starts many short-lived copies of the server, and each keeps its own pool, so keep each one small.
-    const max = Math.max(1, Math.min(50, Math.floor(Number(process.env.DATABASE_POOL_MAX)) || (process.env.VERCEL ? 4 : 10)));
-    const pool = new Pool({ connectionString: url, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, statement_timeout: 30_000 });
+    // Supabase's shared pooler hands out a limited number of connections, so its pool is small too (lib/envcheck.ts, poolSettings).
+    const { max, limitViaSet } = poolSettings(process.env);
+    // The 30-second limit on any one query. On Supabase it is set with a SET on each new connection, not as a start-up setting.
+    const pool = new Pool({ connectionString: url, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, ...(limitViaSet ? {} : { statement_timeout: 30_000 }) });
     attachPoolGuards(pool);
+    // Every connection from this pool. On Supabase the query limit is set with a SET the first time a connection is used, before the
+    // query that asked for it, so every query that runs there is limited. (Not in a 'connect' event: that would send two queries at once.)
+    const limited = new WeakSet<object>();
+    const connect = async () => {
+      const c = await retryWhenPoolFull(() => pool.connect());
+      if (limitViaSet && !limited.has(c)) {
+        limited.add(c);
+        try { await c.query('set statement_timeout = 30000'); } catch (e) { console.error(`[brandit] could not set the query time limit: ${(e as Error).message}`); }
+      }
+      return c;
+    };
+    // One query on its own connection. Like pool.query: a connection that failed is not put back in the pool.
+    const run = async (sql: string, params?: unknown[]) => {
+      if (!limitViaSet) return retryWhenPoolFull(() => pool.query(sql, params as any[]));
+      const c = await connect();
+      let err: Error | undefined;
+      try { return await c.query(sql, params as any[]); } catch (e) { err = e as Error; throw e; } finally { c.release(err); }
+    };
     return {
-      query: async <T extends Row = Row>(sql: string, params?: unknown[]) => (await pool.query(sql, params as any[])).rows as T[],
+      query: async <T extends Row = Row>(sql: string, params?: unknown[]) => (await run(sql, params)).rows as T[],
       exec: async (sql) => {
-        await pool.query(sql);
+        await run(sql);
       },
       tx: async (fn) => {
-        const c = await pool.connect();
+        const c = await connect();
         let broken = false;
         try {
           await c.query('begin');
@@ -63,7 +98,7 @@ async function open(): Promise<Driver> {
         }
       },
       lock: async (key, fn) => {
-        const c = await pool.connect();
+        const c = await connect();
         let got = false;
         try {
           got = (await c.query('select pg_try_advisory_lock($1) as ok', [key])).rows[0]?.ok === true;
@@ -111,6 +146,11 @@ async function boot(): Promise<Driver> {
     await d.exec(m.sql);
     await d.query('insert into schema_migrations (id) values ($1)', [m.id]);
     if (m.after) await m.after(d);
+  }
+  // On Supabase every table is closed to its public API at every start, so a table a later upgrade adds is closed too.
+  // This never stops the site from starting: if it cannot be done, the Setup page says which tables are open.
+  if (rlsWanted(process.env)) {
+    try { await lockDownTables(d); } catch (e) { console.error(`[brandit] could not lock the tables against Supabase's public API: ${(e as Error).message}`); }
   }
   const { seedIfEmpty } = await import('./seed');
   await seedIfEmpty(d);

@@ -6,7 +6,7 @@ This guide takes Brandit from a folder of code to a live site taking real orders
 
 | Path | Good for | You look after |
 | --- | --- | --- |
-| **A. Render, with Cloudflare R2 for files and Cloudflare in front** (recommended, and what `render.yaml` sets up) | Someone else runs the server and database, with automatic backups. About $45 to $50 a month. | Almost nothing. |
+| **A. Render for the site, Supabase for the database, Cloudflare R2 for files and Cloudflare in front** (recommended, and what `render.yaml` and `SUPABASE-GO-LIVE.md` set up) | Someone else runs the server and database. About $25 a month with Supabase Free (which keeps no backups of its own: Brandit's nightly backup to R2 is the safety net), about $50 with Supabase Pro (daily backups). | Almost nothing. |
 | **B. One server with Docker Compose** | The cheapest option, about €6 to €7 a month (for example Hetzner). Everything on one small server with automatic HTTPS. | The server: updates and backups. |
 | **C. Railway or Fly.io** | Same idea as Render. The `Dockerfile` is picked up automatically. Add a Postgres database and a volume for files. | Almost nothing. |
 | **D. Vercel** | Works for browsing, sign-in, ordering, payment and the console, but with limits: uploads are capped at 4 MB (Vercel refuses requests over about 4.5 MB, and most print artwork is bigger), Studio's picture jobs can stall, and the free plan allows only a daily scheduled check. Good for trying the site; Render is better for real orders. | A database and a file bucket of your own. |
@@ -15,12 +15,12 @@ Prices are from vendor and comparison sites in August and September 2026. Check 
 
 ## Path A: Render, R2 and Cloudflare
 
-You will have: the site and the late-order check on one Render web service (Frankfurt), a Render Postgres database (Frankfurt, private: only the web service can reach it, see step 8), artwork files in a private Cloudflare R2 bucket, and Cloudflare handling your domain.
+You will have: the site and the late-order check on one Render web service (Frankfurt), a Supabase Postgres database (Central EU, Frankfurt; the whole database move is in `SUPABASE-GO-LIVE.md`), artwork files in a private Cloudflare R2 bucket, and Cloudflare handling your domain.
 
 | Part | Plan | About a month |
 | --- | --- | --- |
 | Web service | 1 CPU, 2 GB (`1c-2g`) | $25 |
-| Database | 0.5 CPU, 1 GB (`0.5c-1g`), 5 GB disk | $19, plus $1.50 for disk |
+| Database | Supabase Free (500 MB; Pro is $25 for 8 GB and daily backups) | $0 |
 | Artwork files | Cloudflare R2: first 10 GB free, then $0.015 per GB | $0 to start |
 | Domain protection and caching | Cloudflare free plan | $0 |
 
@@ -36,6 +36,7 @@ Render charges in dollars. Make sure you have a card that works for internationa
 
 | Value | What to enter |
 | --- | --- |
+| `DATABASE_URL` | The Supabase **Session pooler** address with your password in it (`SUPABASE-GO-LIVE.md`, Part 1). Never the direct address, never port 6543. |
 | `NEXT_PUBLIC_APP_URL` | `https://yourdomain.ng` if your domain is ready, otherwise the `onrender.com` address Render shows (change it later, see step 7) |
 | `NEXT_PUBLIC_WHATSAPP` | Your business WhatsApp number with country code and no plus, such as `2348031234567` |
 | `ADMIN_EMAIL`, `ADMIN_PIN` | Your sign-in for the team console. The PIN is 6 to 12 digits, not a run like `123456`. You will change it after the first login. |
@@ -61,9 +62,9 @@ Behind Cloudflare's free plan, a single upload cannot be larger than 100 MB. Bra
 **8. Backups and watching it.**
 
 - **Brandit backs itself up.** Every night at about 2am Lagos time it copies the whole database into your R2 bucket (under `backups/`), reads the copy back to prove it is whole, and keeps the last 14 nights and the last 12 months. Once a month it rebuilds the newest copy in a throw-away database and checks every row and every naira. Console, **Setup**, **Backups** shows the result in plain words, and **Back up now** and **Test a restore** do it on demand. This is independent of Render, so it still works if you ever move host. **Keep the bucket private** (do not switch on a public or r2.dev address): the backups hold customer details.
-- Render's own database backups are a second layer. Open the database in Render, look at **Recovery**, and see which backups your plan keeps and for how long.
-- **Practise a restore once, before launch.** Make an empty test database in Render, copy its **External** address, and from your computer run `npm run restore -- --list`, then `npm run restore -- backups/daily/<date>.json.gz --check` (rebuilds it in memory and checks it), then the same with `--into "<the test database address>" --yes`. Do it again whenever you change host. The steps for a real emergency are under "Looking after it".
-- On Render the database accepts connections only from inside Render: `render.yaml` sets `ipAllowList: []`. (If you host on Vercel instead, Path D, it has to be opened to everyone.) To take a manual copy or run a query from your own computer, add your public IP address in the database's **Networking** section, use the **External** connection string, and remove the address afterwards.
+- **Supabase's Free plan keeps no backups of its own**, so the nightly copy in R2 is the only one: keep Setup, Backups green. (Supabase Pro adds daily backups as a second layer.)
+- **Practise a restore once, before launch.** Make an empty test project in Supabase (the Free plan allows two), copy its **Session pooler** address, and from your computer run `npm run restore -- --list`, then `npm run restore -- backups/daily/<date>.json.gz --check` (rebuilds it in memory and checks it), then the same with `--into "<the test database address>" --yes`. Do it again whenever you change host. The steps for a real emergency are under "Looking after it".
+- Supabase's database is reached over the internet, with SSL, and needs the password. Brandit also closes every table to Supabase's public API at every start (row-level security), and `SUPABASE-GO-LIVE.md` has you switch that API off. To run a query by hand, use Supabase's **SQL Editor**.
 - **Be told when it breaks.** Set `ALERT_PHONE` to your own number (with the country code) and have SMS or WhatsApp set up. The site then messages you, at most once every 30 minutes for the same problem, when: Paystack reports a payment we could not match to an order, the database stops answering for two minutes (and again when it is back), the nightly backup or the monthly restore test fails, or the five-minute checks fail. Press **Send a test alert** on the Setup page to see one arrive. Errors also go to Sentry.
 - **Is it up?** Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health`, with an alert that texts you if it stops answering. Check for the text `"ok":true`. Free monitors look every 3 to 5 minutes; checking every minute needs a paid plan. Render also checks `/api/health` itself and will not send visitors to a version that fails it.
 - In Render, turn on email or Slack notifications for failed deploys.
@@ -73,7 +74,7 @@ Behind Cloudflare's free plan, a single upload cannot be larger than 100 MB. Bra
 | What you see | What to do |
 | --- | --- |
 | Deploy fails and the log says "Cannot start in live mode" | `SESSION_SECRET` or `DATABASE_URL` is missing. Check the Environment tab. |
-| The log says the database refused the connection, mentioning a password or SSL | Check that `DATABASE_URL` is set from the database. If the message is about SSL, set `DATABASE_SSL` to `true`, or to `false` if it says SSL is not supported. |
+| The log says the database refused the connection, mentioning a password or SSL | Open `/api/health`: it says in plain words what to change (the `problem` line). On Supabase the usual causes are the square brackets left around the password, the direct address instead of the Session pooler address, or a paused Free project (press **Resume project**). Otherwise, if the message is about SSL, set `DATABASE_SSL` to `true`, or to `false` if it says SSL is not supported. |
 | The site has no styling or images | The build command did not copy the `public` and `.next/static` folders. Make sure `render.yaml` still has the `cp -r` steps. |
 | Uploads fail only after you turned the Cloudflare orange cloud on | Check the file is under 90 MB, and that the proxy limit has not been lowered in Cloudflare's Network settings. |
 | A change to the site address or WhatsApp number does not show | Redeploy. Those two settings are built in when the site is built. |
@@ -163,7 +164,7 @@ Optional: `DATABASE_POOL_MAX` (connections each server copy may open; default 4 
 
 **Team sign-in and the admin PIN.** The first time the site starts with `ADMIN_EMAIL` and `ADMIN_PIN` set, it creates that admin. The PIN is stored scrambled, so nobody can read it back, and changing `ADMIN_PIN` afterwards does nothing (so a PIN you change in the console is never undone by a redeploy). A PIN is 6 to 12 digits, not one digit repeated and not a run like `123456`; a weaker one creates no admin, and the sign-in page then says that no team account exists. On a live site, demo accounts (`...@brandit.test`, PIN 1234) are switched off automatically.
 
-To see who can sign in, or to set a forgotten PIN, run these from the project folder on your computer (after `npm install`), with `DATABASE_URL` set to the External URL as in the test below:
+To see who can sign in, or to set a forgotten PIN, run these from the project folder on your computer (after `npm install`), with `DATABASE_URL` set to the database address (Supabase: the Session pooler one; Render: the External URL) as in the test below:
 
 ```
 npm run admin -- list
@@ -171,7 +172,7 @@ npm run admin -- set you@example.com 482915
 npm run admin -- disable-demo
 ```
 
-**Looking at your data.** If the site runs on Render, the database is private, so first let your own computer in for a while: open the database in Render, **Networking** (or **Info**), add your public IP address (search "what is my IP" on Google) and save. Install a free database app such as Beekeeper Studio, DBeaver or pgAdmin, start a new PostgreSQL connection, and paste the External URL (turn on SSL if the app asks). When you are done, remove your address again. (Re-syncing the Blueprint also resets this list to private.) Your orders, customers and products are in the tables of the same names. Read freely, but make changes through the console: the console also updates the records that depend on them.
+**Looking at your data.** On Supabase, open the project and use **Table Editor** or **SQL Editor**: nothing to install. To use your own database app (Beekeeper Studio, DBeaver, pgAdmin), start a new PostgreSQL connection with the **Session pooler** address from Connect (turn on SSL if the app asks). If the site still runs on a Render database, that one is private, so first let your own computer in for a while: open the database in Render, **Networking** (or **Info**), add your public IP address (search "what is my IP" on Google) and save, paste the External URL, and remove your address again afterwards. Your orders, customers and products are in the tables of the same names. Read freely, but make changes through the console: the console also updates the records that depend on them.
 
 **Testing a database address.** From the project folder on your computer (after `npm install`), in PowerShell:
 
@@ -274,13 +275,13 @@ You can launch with Paystack, a database, and any one of Google, email or SMS. T
 - **Updating on Render.** Push your changes to the Git repository. Render builds and deploys by itself, and keeps serving the old version until the new one passes the health check. If a deploy goes wrong, Render's **Rollbacks** puts the previous version back.
 - **Updating on a Docker server.** Copy the new code over the old, then `docker compose up -d --build`. The database updates itself on start.
 - **Backups.** Brandit copies the database to your bucket every night by itself (Path A, step 8); the Setup page shows the newest copy and the last restore test. On a Docker server the old `./scripts/backup.sh` (a full `pg_dump` plus the artwork files) is still a good second copy: run it every night (`crontab -e`, then `0 2 * * * cd /path/to/brandit && ./scripts/backup.sh`) and copy the `backups/` folder somewhere off the server. A backup that lives only on the same server is not a backup. The artwork files themselves live in the bucket; switch on versioning or a second copy there if you want protection against deleting a file by mistake.
-- **Restoring after a disaster.** The calm order: (1) make a new empty Postgres database and copy its **External** address; (2) on your computer set the bucket values (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) and run `npm run restore -- --list` to see the copies; (3) run `npm run restore -- backups/daily/<date>.json.gz --check` to prove the copy is whole; (4) run `npm run restore -- backups/daily/<date>.json.gz --into "<new database address>" --yes`, which creates the tables and loads everything in one all-or-nothing step, checks every link between tables and the money, and carries the order numbers on; (5) in Render set `DATABASE_URL` to the new database's **Internal** address and redeploy; (6) run `npm run smoke -- https://yourdomain.ng --deep --cron-secret <CRON_SECRET>`. You lose at most the orders since the last backup; Paystack's dashboard lists any payments in that gap so they can be matched by hand. `npm run backup` takes a backup from your computer, for example before a risky change. If the bucket itself is lost, use Render's own recovery (Path A, step 8) or the Docker `pg_dump` copy.
+- **Restoring after a disaster.** The calm order: (1) make a new empty Postgres database (a new Supabase project works) and copy its address (Supabase: the **Session pooler** one); (2) on your computer set the bucket values (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) and run `npm run restore -- --list` to see the copies; (3) run `npm run restore -- backups/daily/<date>.json.gz --check` to prove the copy is whole; (4) run `npm run restore -- backups/daily/<date>.json.gz --into "<new database address>" --yes`, which creates the tables and loads everything in one all-or-nothing step, checks every link between tables and the money, and carries the order numbers on; (5) in Render set `DATABASE_URL` to the new database's address (Render's own database: the **Internal** one) and redeploy; (6) run `npm run smoke -- https://yourdomain.ng --deep --cron-secret <CRON_SECRET>`. You lose at most the orders since the last backup; Paystack's dashboard lists any payments in that gap so they can be matched by hand. `npm run backup` takes a backup from your computer, for example before a risky change. If the bucket itself is lost, use Render's own recovery (Path A, step 8) or the Docker `pg_dump` copy.
 - **Restoring on a Docker server (pg_dump copy).** `gunzip -c backups/brandit-db-<stamp>.sql.gz | docker compose exec -T db psql -U brandit brandit`
 - **Is it up?** Point a free uptime monitor (UptimeRobot, Better Stack) at `https://yourdomain.ng/api/health` and have it text you. Free monitors check every 3 to 5 minutes.
 - **Errors.** Make a free Sentry project (platform Node.js) and set `SENTRY_DSN`. Every server error is then sent to Sentry, which emails the team. Only the error text and the page address (without its query string) are sent: no cookies, form data or customer details, and anything that looks like a key or database address is blanked. Set `ALERT_PHONE` as well and the few things that must never wait (a payment that could not be applied, the database down, a failed backup) also reach your phone. Press **Send a test alert** on the Setup page to see both arrive.
 - **Logs.** Render: the service's **Logs** tab. Docker server: `docker compose logs -f app`.
 - **The five-minute check** runs inside the server and refunds late 24-hour orders by itself. In the same pass it sends the unpaid-order reminders, issues referral rewards, erases rider positions that are no longer needed, and deletes review photos nobody checked in 60 days. The Setup page shows when it last ran. If it says "has not run", restart the app and look at the logs. Keep one instance of the web service so the check does not run twice.
-- **If the site is down.** Render: check the service's **Events** and **Logs**. Docker server: `docker compose ps` shows which part stopped, and `docker compose up -d` brings it back. Orders already paid are safe in the database.
+- **If the site is down.** If `/api/health` says the database is not answering and the database is Supabase Free, open the Supabase dashboard: a project that was paused for low activity needs **Resume project**. Render: check the service's **Events** and **Logs**. Docker server: `docker compose ps` shows which part stopped, and `docker compose up -d` brings it back. Orders already paid are safe in the database.
 
 ## Settings reference
 
@@ -290,7 +291,9 @@ Every setting is explained in `.env.example`. Settings are read when the server 
 
 Upgrading an existing site: four database migrations (`004_catalog_coupons_custom`, `005_review_consent`, `006_growth`, `007_studio`) run by themselves on first start. They only add tables, columns and starting content (ten templates, three seasonal pages) and keep all existing products, orders, reviews and customers. Unit tests run them on a database that already has data. **Back up the database first**, as always. On Render that is the database's **Backups** tab; on a Docker server run `./scripts/backup.sh`.
 
-Tested: the production build starts from the same commands `render.yaml` uses (`node .next/standalone/server.js`) against a real PostgreSQL server in live mode. The health check, the database migrations, the first admin, the five-minute check's protection, the static files, the logo and the security headers all worked. The blueprint's settings are also locked by an automated test (region, plan names, a private database, no secrets in the file).
+Supabase: tested on a real PostgreSQL 16 server set up the way Supabase is (a login that is not a superuser, Supabase's public roles present, SSL on, a `pooler.supabase.com` host name on port 6543): fresh install, restore from a backup, every table locked against the public API, the 30-second query limit on every connection, a full connection pool, the late-order check and its lock, maintenance mode, and the full end-to-end run. **Not tested: a real Supabase project**, because Supabase's own pooler was not available. Follow `SUPABASE-GO-LIVE.md`, Part 3.
+
+Tested: the production build starts from the same commands `render.yaml` uses (`node .next/standalone/server.js`) against a real PostgreSQL server in live mode. The health check, the database migrations, the first admin, the five-minute check's protection, the static files, the logo and the security headers all worked. The blueprint's settings are also locked by an automated test (region, plan names, no database block, no secrets in the file).
 
 Vercel (Path D): the start-up checks were reproduced on a normal Node server with `VERCEL=1` and each failure was confirmed to produce the page or the log line described above. Brandit has **not** been deployed on Vercel itself: the database connection from Vercel, the 4 MB cap, the scheduled check and Studio on Vercel are untested there.
 

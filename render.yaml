@@ -1,13 +1,17 @@
-# Render Blueprint for Brandit: one web service and one Postgres database, both in Frankfurt.
+# Render Blueprint for Brandit: one web service in Frankfurt. The database is Supabase (Central EU, Frankfurt), not Render.
 #
 # Artwork files go to a Cloudflare R2 bucket (the S3_* settings), not to a disk. A service with a disk
 # cannot do zero-downtime deploys, and a bucket is cheaper and survives replacing the server.
 #
 # Check the file before using it (needs the Render CLI v2.7 or later):   render blueprints validate render.yaml
-# Then follow DEPLOY.md, "Path A: Render".
+# Then follow SUPABASE-GO-LIVE.md (the whole move, step by step).
 #
 # The region cannot be changed after creation, so it is set here on purpose: Frankfurt is the nearest
-# Render region to Lagos. The web service and the database must share a region to use the private network.
+# Render region to Lagos, and the Supabase project is made in Central EU (Frankfurt) beside it.
+#
+# There is no database in this file any more. If your Render account still has the old brandit-db, a Blueprint sync does not
+# delete it (Render: "removing a definition from a Blueprint file does not delete the corresponding resource"). Keep it for
+# two weeks as your way back, then delete it by hand in the Render dashboard.
 
 services:
   - type: web
@@ -30,11 +34,9 @@ services:
       - key: LAUNCH_PRICES
         value: "yes"        # Loads the launch price book once, on the first start, so there is something to buy. It never loads itself again (console, Setup, Launch price book).
       - key: DATABASE_URL
-        fromDatabase:
-          name: brandit-db
-          property: connectionString
-      - key: DATABASE_SSL
-        value: "false"     # This is the private-network address. If the log ever says SSL is required, set this to "true".
+        sync: false        # Supabase, Connect, "Session pooler" (port 5432), with your password in place of [YOUR-PASSWORD]. Never the direct address, never port 6543.
+      - key: DATABASE_POOL_MAX
+        value: "5"         # Supabase's pooler hands out a limited number of connections, and two copies of the server overlap during a deploy.
       - key: SESSION_SECRET
         generateValue: true
       - key: CRON_SECRET
@@ -66,18 +68,3 @@ services:
       # Optional, shown on the Contact page and in the legal pages when set: NEXT_PUBLIC_SUPPORT_EMAIL, NEXT_PUBLIC_BUSINESS_ADDRESS
       # Set to yes once a lawyer has reviewed the Terms, Privacy and Refunds pages (hides the draft notice): LEGAL_REVIEWED
       # Also set once you have checked it on the console Setup page ("Your address"):  TRUSTED_PROXY_HOPS
-
-databases:
-  - name: brandit-db
-    region: frankfurt
-    plan: 0.5c-1g          # 0.5 CPU, 1 GB RAM
-    diskSizeGB: 5          # Orders are small. This can be increased later, never reduced.
-    postgresMajorVersion: "17"
-    # Private: only services inside Render (the web service above) can connect, over the private network.
-    # This is the safe setting for a live shop. Render applies this list each time the Blueprint syncs, so a change
-    # made only in the dashboard is undone.
-    # To look at your data from your own computer, add your public IP address in the database's Networking section,
-    # use the External connection string, and remove the address afterwards (DEPLOY.md, "Looking at your data").
-    # If you host the site on Vercel instead (Path D), this must be opened to 0.0.0.0/0, because Vercel connects
-    # from changing addresses.
-    ipAllowList: []

@@ -2,6 +2,8 @@
 
 This is the whole path, in order. There is no staging step in it. If you want one anyway, `DEPLOY.md` has it, but nothing here needs it.
 
+**Moving the database to Supabase Free? Do [SUPABASE-GO-LIVE.md](SUPABASE-GO-LIVE.md) first: it holds the new code, the database move, and the checks. The rest of this page still applies for what is new in 2.0.**
+
 It assumes thebrandit.ng is already running an earlier version on your host (Render, Docker or Vercel). The database upgrades itself; you do not run anything by hand.
 
 ## 1. Before you replace the code (5 minutes)
@@ -56,7 +58,7 @@ These are the only things that cannot be done for you. The shop works without th
 
 | Need | Why | Without it |
 | --- | --- | --- |
-| Postgres database | Orders and customers | Required |
+| Postgres database (Supabase Free is enough to start) | Orders and customers | Required |
 | Paystack live key and webhook | Taking money | Required |
 | R2 or S3 bucket (or a disk) | Customers' artwork files | Required |
 | Resend, or Google sign-in | Customers signing in at checkout | At least one is required |

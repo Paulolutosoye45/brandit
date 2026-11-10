@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { query, isDemo } from '@/lib/db';
-import { dbHint, isStaging } from '@/lib/envcheck';
+import { dbHint, isStaging, usingSupabase } from '@/lib/envcheck';
 import { reportError } from '@/lib/errorReport';
 import { siteAlert, watchDatabase } from '@/lib/siteAlert';
 
@@ -18,7 +18,7 @@ export async function GET() {
   } catch (e) {
     void reportError(e, { routePath: '/api/health', path: '/api/health', method: 'GET' });
     // Only after two minutes of failing, so a one-second blip does not wake anyone. Not in demo mode, where there is nobody to wake.
-    if (watchDatabase(false) === 'down' && !isDemo()) void siteAlert({ key: 'database', what: 'The Brandit database is not answering, so the site cannot take orders or payments. Open the Render dashboard, then the brandit-db page, to see if it is restarting.', error: e });
+    if (watchDatabase(false) === 'down' && !isDemo()) void siteAlert({ key: 'database', what: usingSupabase(process.env) ? 'The Brandit database is not answering, so the site cannot take orders or payments. Open your Supabase dashboard: if the project says Paused, press Resume project. Otherwise check status.supabase.com.' : 'The Brandit database is not answering, so the site cannot take orders or payments. Open the Render dashboard, then the brandit-db page, to see if it is restarting.', error: e });
     const problem = dbHint(e) ?? 'The database did not open. The server log (on Vercel: Logs, search "brandit") has the details.';
     return NextResponse.json({ ok: false, db: 'down', problem }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }

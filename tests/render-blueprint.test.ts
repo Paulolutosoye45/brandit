@@ -9,38 +9,29 @@ const root = path.resolve(__dirname, '..');
 const read = (f: string) => fs.readFileSync(path.join(root, f), 'utf8');
 const bp = parse(read('render.yaml')) as any;
 const web = bp.services[0];
-const db = bp.databases[0];
 const envKeys: string[] = web.envVars.map((e: any) => e.key);
 const envVar = (k: string) => web.envVars.find((e: any) => e.key === k);
 
 // Plan names from Render's Blueprint reference (render.com/docs/blueprint-spec), read October 2026.
 const WEB_PLANS = ['free', '0.5c-512mb', '1c-2g', '2c-4g', '2c-8g', '2c-16g', '4c-8g', '4c-16g', '4c-32g', '8c-16g', '8c-32g', '8c-64g', '12c-24g', '12c-48g', '12c-96g'];
-const DB_PLANS = ['free', '0.1c-256mb', '0.5c-1g', '1c-2g', '1c-4g', '2c-4g', '2c-8g', '2c-16g', '4c-16g', '4c-32g'];
 
 describe('the Render blueprint', () => {
-  it('has one web service and one database', () => {
+  it('has one web service and no database: the database is Supabase', () => {
     expect(bp.services).toHaveLength(1);
-    expect(bp.databases).toHaveLength(1);
+    expect(bp.databases).toBeUndefined();
     expect(web.type).toBe('web');
     expect(web.runtime).toBe('node');
   });
 
-  it('puts everything in Frankfurt, the nearest Render region to Lagos (it cannot be changed later)', () => {
+  it('puts the web service in Frankfurt, the nearest Render region to Lagos (it cannot be changed later), beside the Supabase project', () => {
     expect(web.region).toBe('frankfurt');
-    expect(db.region).toBe('frankfurt');
+    expect(read('SUPABASE-GO-LIVE.md')).toMatch(/Central EU \(Frankfurt\)/);
   });
 
   it('uses plan names Render recognises, and never a free plan for a live shop', () => {
     expect(WEB_PLANS).toContain(web.plan);
-    expect(DB_PLANS).toContain(db.plan);
     expect(web.plan).not.toBe('free');
-    expect(db.plan).not.toBe('free');
     expect(web.plan).not.toBe('0.5c-512mb');   // too small for the image and PDF checks
-  });
-
-  it('keeps the database private: only services inside Render can connect', () => {
-    expect(db.ipAllowList).toEqual([]);
-    expect(Number(db.diskSizeGB) === 1 || Number(db.diskSizeGB) % 5 === 0).toBe(true);
   });
 
   it('stores files in a bucket, not on a disk, and keeps one instance for the built-in scheduler', () => {
@@ -49,9 +40,17 @@ describe('the Render blueprint', () => {
     for (const k of ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']) expect(envKeys).toContain(k);
   });
 
-  it('turns demo mode off and wires the database in without copying a password', () => {
+  it('turns demo mode off and asks for the Supabase address once, never writing the password into the file', () => {
     expect(envVar('DEMO_MODE').value).toBe('false');
-    expect(envVar('DATABASE_URL').fromDatabase).toEqual({ name: db.name, property: 'connectionString' });
+    expect(envVar('DATABASE_URL').sync).toBe(false);
+    expect(envVar('DATABASE_URL').value).toBeUndefined();
+    expect(envVar('DATABASE_URL').fromDatabase).toBeUndefined();
+  });
+
+  it('does not switch SSL off (Supabase needs it) and keeps the connection pool small for Supabase\'s pooler', () => {
+    expect(envVar('DATABASE_SSL')).toBeUndefined();
+    expect(Number(envVar('DATABASE_POOL_MAX').value)).toBeGreaterThanOrEqual(2);
+    expect(Number(envVar('DATABASE_POOL_MAX').value)).toBeLessThanOrEqual(6);
   });
 
   it('never writes a secret into the file', () => {

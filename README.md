@@ -78,11 +78,11 @@ Things to try:
 
 ## Going live
 
-**Already have a site running? Start with [GO-LIVE.md](GO-LIVE.md)**: one page, in order, no staging step. **Starting from nothing? Use [DEPLOY.md](DEPLOY.md).** The recommended path is Render for the app and database, Cloudflare R2 for artwork files and Cloudflare in front (about $45 to $50 a month). `render.yaml` sets up the Render side. DEPLOY.md also covers a cheaper one-server Docker setup, the accounts you need, a before-launch checklist, backups and monitoring. The short version is below.
+**Putting the database on Supabase's Free plan (saves the $19 Render database)? Follow [SUPABASE-GO-LIVE.md](SUPABASE-GO-LIVE.md)**: the whole move, in order. **Already have a site running? Start with [GO-LIVE.md](GO-LIVE.md)**: one page, in order, no staging step. **Starting from nothing? Use [DEPLOY.md](DEPLOY.md).** The recommended path is Render for the app, Supabase for the database, Cloudflare R2 for artwork files and Cloudflare in front (about $25 a month with Supabase Free, about $50 with Supabase Pro). `render.yaml` sets up the Render side (the database is not in it). DEPLOY.md also covers a cheaper one-server Docker setup, the accounts you need, a before-launch checklist, backups and monitoring. The short version is below.
 
 Work through this in order.
 
-1. **Database.** Create a Postgres database (Supabase works) and set `DATABASE_URL`. Tables are created on first start.
+1. **Database.** Create a Postgres database (Supabase's Free plan works: use its "Session pooler" address, see SUPABASE-GO-LIVE.md) and set `DATABASE_URL`. Tables are created on first start.
 2. **Switch off demo mode.** Set `DEMO_MODE=false`, a long `SESSION_SECRET`, `CRON_SECRET`, and `ADMIN_EMAIL` and `ADMIN_PIN` for your first admin. Change the PIN after your first login.
 3. **Google.** Create an OAuth client in Google Cloud and add `{your site}/api/auth/google/callback` as a redirect URI. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Until both are set, the Google button is hidden.
 4. **Email codes.** Create a Resend account, verify your sending domain, set `RESEND_API_KEY` and `EMAIL_FROM`. Until then the email option is hidden.
@@ -95,7 +95,7 @@ Work through this in order.
 11. **Contact details.** Optionally set `NEXT_PUBLIC_SUPPORT_EMAIL` and `NEXT_PUBLIC_BUSINESS_ADDRESS`. They appear on the Contact page and in the legal pages. Also enter your pickup address in the console under Delivery and rules.
 12. **Photos.** Upload a real photo for each product in the console (Products, Edit, Photos). Photos are shrunk automatically with `sharp`, which installs with `npm install`.
 
-**Hosting.** Render in the Frankfurt region, with R2 for files and Cloudflare for your domain, is the tested recommendation: see DEPLOY.md, Path A. Any Node host works. Vercel runs the site too (DEPLOY.md, Path D) but caps uploads at 4 MB, because uploads pass through the app and Vercel refuses request bodies over about 4.5 MB. Behind Cloudflare's free plan a single upload cannot exceed 100 MB, so the upload limit defaults to 90 MB. The five-minute late-order check runs inside the server, so keep one instance.
+**Hosting.** Render in the Frankfurt region with the database on Supabase (Central EU, Frankfurt), R2 for files and Cloudflare for your domain, is the recommendation: see SUPABASE-GO-LIVE.md and DEPLOY.md, Path A. Any Node host works. Vercel runs the site too (DEPLOY.md, Path D) but caps uploads at 4 MB, because uploads pass through the app and Vercel refuses request bodies over about 4.5 MB. Behind Cloudflare's free plan a single upload cannot exceed 100 MB, so the upload limit defaults to 90 MB. The five-minute late-order check runs inside the server, so keep one instance.
 
 ## Project map
 

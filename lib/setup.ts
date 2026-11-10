@@ -7,7 +7,8 @@ import { s3On } from './storage';
 import { backupsEnabled, backupStatus } from './backup';
 import { smsOn, whatsappOn } from './messages';
 import { emailOn } from './email';
-import { envProblems, onVercel, databaseUrl, dbHost, isRenderInternal, isStaging } from './envcheck';
+import { envProblems, onVercel, databaseUrl, dbHost, isRenderInternal, isStaging, isSupabaseHost, isSupabasePooler, rlsWanted } from './envcheck';
+import { openTables, tableCount } from './rls';
 import { paystackMode } from './connections';
 import { parseDsn } from './errorReport';
 import { googleRedirectUri } from './google';
@@ -48,14 +49,16 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
   if (databaseUrl(env)) {
     const host = dbHost(databaseUrl(env));
     const priv = isRenderInternal(host);
+    const sb = isSupabaseHost(host);
     const t0 = Date.now();
     let ms = -1;
     try { await query('select 1'); ms = Date.now() - t0; } catch { /* the health check reports this */ }
-    const kind = priv ? 'Render\'s private address, reachable only from inside Render' : 'a public address';
-    if (env.RENDER && !priv) add({ id: 'db', group: 'Basics', label: 'Database', status: 'warn', detail: `Hosted Postgres on ${kind}${ms >= 0 ? `, answering in ${ms} ms` : ''}.`, fix: 'The site runs inside Render, so use the database\'s Internal address (set DATABASE_URL "from database" in the Environment tab). It is faster and the database can stay closed to the internet.' });
-    else if (ms < 0) add({ id: 'db', group: 'Basics', label: 'Database', status: 'bad', detail: 'The database did not answer.', fix: 'Open /api/health: it says in plain words what to change.' });
-    else if (ms > 250) add({ id: 'db', group: 'Basics', label: 'Database', status: 'warn', detail: `Hosted Postgres on ${kind}, but it took ${ms} ms to answer.`, fix: 'Every page waits on this. Put the site and the database in the same region (Frankfurt is nearest to Lagos), or use the database\'s direct address.' });
+    const kind = sb ? (isSupabasePooler(host) ? 'Supabase, through its session pooler' : 'Supabase, through its direct address') : priv ? 'Render\'s private address, reachable only from inside Render' : 'a public address';
+    if (env.RENDER && !priv && !sb) add({ id: 'db', group: 'Basics', label: 'Database', status: 'warn', detail: `Hosted Postgres on ${kind}${ms >= 0 ? `, answering in ${ms} ms` : ''}.`, fix: 'The site runs inside Render, so use the database\'s Internal address (set DATABASE_URL "from database" in the Environment tab). It is faster and the database can stay closed to the internet.' });
+    else if (ms < 0) add({ id: 'db', group: 'Basics', label: 'Database', status: 'bad', detail: 'The database did not answer.', fix: sb ? 'Open /api/health: it says in plain words what to change. If the Supabase project shows "Paused", open it in the Supabase dashboard and press Resume project.' : 'Open /api/health: it says in plain words what to change.' });
+    else if (ms > 250) add({ id: 'db', group: 'Basics', label: 'Database', status: 'warn', detail: `Hosted Postgres on ${kind}, but it took ${ms} ms to answer.`, fix: sb ? 'Every page waits on this. The Supabase project should be in Central EU (Frankfurt) and the site on Render in Frankfurt. Supabase does not document a way to change the region of a project, so if it is elsewhere, make a new project in Frankfurt and restore your last backup into it (SUPABASE-GO-LIVE.md).' : 'Every page waits on this. Put the site and the database in the same region (Frankfurt is nearest to Lagos), or use the database\'s direct address.' });
     else add({ id: 'db', group: 'Basics', label: 'Database', status: 'ok', detail: `Hosted Postgres on ${kind}, answering in ${ms} ms.` });
+    if (sb && ms >= 0) await supabaseChecks(env, add, host);
   } else {
     add({ id: 'db', group: 'Basics', label: 'Database', status: demo ? 'info' : 'bad', detail: 'Using the built-in local database.', fix: 'Set DATABASE_URL to a hosted Postgres (Supabase, Railway, Render). The built-in database is lost when a server is replaced.' });
   }
@@ -242,6 +245,37 @@ export async function setupChecks(env: NodeJS.ProcessEnv = process.env): Promise
   add({ id: 'legal', group: 'Your numbers', label: 'Terms and Privacy pages', status: 'info', detail: 'Drafts.', fix: 'Have a Nigerian lawyer review /legal/terms and /legal/privacy before taking public orders.' });
 
   return { checks: c, problems: c.filter((x) => x.status === 'bad').length, warnings: c.filter((x) => x.status === 'warn').length };
+}
+
+/**
+ * The checks that only matter when the database is Supabase: the pooler mode, whether every table is closed to Supabase's public
+ * API, and how full the Free plan's 500 MB is. Each one is allowed to fail quietly: the Setup page must always open.
+ */
+async function supabaseChecks(env: NodeJS.ProcessEnv, add: (x: Check) => void, host: string): Promise<void> {
+  const raw = [env.DATABASE_URL_UNPOOLED, env.POSTGRES_URL_NON_POOLING, env.DATABASE_URL].find((v) => v) ?? '';
+  if (isSupabasePooler(host) && /\.pooler\.supabase\.com:6543(?=[/?#\s"']|$)/i.test(raw.trim())) {
+    add({ id: 'db-port', group: 'Basics', label: 'Supabase connection mode', status: 'info', detail: 'DATABASE_URL says port 6543 (transaction mode). Brandit switched to port 5432 (session mode) by itself, because its database locks only hold in session mode.', fix: 'Change 6543 to 5432 in DATABASE_URL so the setting says what is happening.' });
+  }
+  try {
+    const open = await openTables({ query, exec: async (sql) => { await query(sql); } });
+    const total = await tableCount({ query, exec: async (sql) => { await query(sql); } });
+    if (rlsWanted(env)) {
+      add(open.length === 0
+        ? { id: 'db-rls', group: 'Basics', label: 'Tables closed to Supabase\'s public API', status: 'ok', detail: `All ${total} tables are locked, so the public key Supabase gives every project cannot read them.` }
+        : { id: 'db-rls', group: 'Basics', label: 'Tables closed to Supabase\'s public API', status: 'bad', detail: `${open.length} of ${total} tables are open to Supabase's public API (${open.slice(0, 4).join(', ')}${open.length > 4 ? ', ...' : ''}). Anyone holding the project's public key could read them.`, fix: 'Restart the site: the tables are locked at every start. If this stays, switch off "Enable Data API" in Supabase (Project Settings, Data API) and check the log for "could not lock the tables".' });
+    }
+  } catch { /* never breaks the Setup page */ }
+  try {
+    const bytes = Number((await one<{ b: string }>('select pg_database_size(current_database())::bigint as b'))?.b ?? 0);
+    const mb = Math.round(bytes / 1_048_576);
+    if (bytes > 0) {
+      add(mb >= 450
+        ? { id: 'db-size', group: 'Basics', label: 'Database size on Supabase', status: 'bad', detail: `${mb} MB. The Free plan allows 500 MB, and past that Supabase restricts the project, so orders could stop saving.`, fix: 'Upgrade the project to Pro in Supabase (8 GB), today.' }
+        : mb >= 350
+          ? { id: 'db-size', group: 'Basics', label: 'Database size on Supabase', status: 'warn', detail: `${mb} MB of the Free plan's 500 MB.`, fix: 'Plan the move to Pro in Supabase (8 GB) before it fills.' }
+          : { id: 'db-size', group: 'Basics', label: 'Database size on Supabase', status: 'ok', detail: `${mb} MB of the Free plan's 500 MB. Artwork lives in the file bucket, not here.` });
+    }
+  } catch { /* never breaks the Setup page */ }
 }
 
 /** The few things that must be right for a live site to start at all. The rules live in envcheck.ts so the middleware can use them too. */

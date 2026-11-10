@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { envProblems, setupPage, isStaging } from './lib/envcheck';
+import { envProblems, setupPage, isStaging, maintenanceOn, maintenancePage, staysOpenInMaintenance } from './lib/envcheck';
 
 /**
  * Two jobs, both settings-only: no database, no Node-only modules.
  *
  * 1. If the settings the site cannot run without are missing, answer every page with a page that says which ones, instead of
  *    a bare "500 Internal Server Error". It does nothing at all on a site that is set up properly.
- * 2. On the private test copy of the site (APP_ENV=staging): tell search engines to stay away, and ask for the team password
+ * 2. MAINTENANCE=on (used for a few minutes when the database is moved): customers get a "back in a few minutes" page with a
+ *    503, the team keeps the console, and the Paystack webhook answers 503 too, so Paystack keeps each payment notice and sends it again.
+ * 3. On the private test copy of the site (APP_ENV=staging): tell search engines to stay away, and ask for the team password
  *    (STAGING_PASSWORD) before showing anything. The health check, the Paystack webhook and the scheduled check stay open
  *    because machines call them; each protects itself (a signature, a secret).
  */
@@ -34,6 +36,12 @@ export function middleware(req: NextRequest) {
     return new NextResponse(setupPage(problems, process.env), {
       status: 503,
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '60', 'X-Robots-Tag': 'noindex' },
+    });
+  }
+  if (maintenanceOn(process.env) && !staysOpenInMaintenance(req.nextUrl.pathname)) {
+    return new NextResponse(maintenancePage(), {
+      status: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '120', 'X-Robots-Tag': 'noindex' },
     });
   }
   if (!isStaging(process.env)) return NextResponse.next();

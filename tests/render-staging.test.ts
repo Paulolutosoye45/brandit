@@ -15,7 +15,8 @@ const envVar = (k: string) => web.envVars.find((e: any) => e.key === k);
 describe('the test-site blueprint', () => {
   it('shares no name with the real site, so both can live in one Render account', () => {
     expect(web.name).not.toBe(prod.services[0].name);
-    expect(db.name).not.toBe(prod.databases[0].name);
+    expect(prod.databases).toBeUndefined();   // the real site's database is Supabase, so there is no Render database to clash with
+    expect(db.name).not.toBe('brandit-db');
     expect(web.envVars.find((e: any) => e.key === 'DATABASE_URL').fromDatabase.name).toBe(db.name);
   });
 

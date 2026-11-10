@@ -7,3 +7,6 @@ next-env.d.ts
 .env.local
 shots
 backups
+
+# Render database export (customer data) - never commit
+/brandit/
