@@ -58,7 +58,7 @@ export function Footer({ t, showLang, studio = false, whatsapp = null, hours = S
         <div className="grid content-start gap-3">
           <Logo tone="light" className="h-11 w-auto" />
           <p className="max-w-[260px] text-[15px] text-on-ink-muted">{t('Printing without the hassle. Design and print for Lagos.')}</p>
-          <p className="text-[14px] text-on-ink-muted">{t('A Cerebre Media Africa company')}</p>
+          <p className="text-[14px] text-on-ink-muted">{t('A Valuemize Enterprise company')}</p>
           {showLang && <div className="mt-1"><LangSwitch tone="dark" /></div>}
         </div>
         <div className="grid content-start gap-1 text-[15px]">

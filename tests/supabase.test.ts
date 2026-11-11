@@ -70,7 +70,8 @@ describe('the connection pool', () => {
   });
   it('is unchanged for every other database', () => {
     expect(poolSettings(env({ DATABASE_URL: 'postgres://u:p@dpg-abc-a/db' }))).toEqual({ max: 10, limitViaSet: false });
-    expect(poolSettings(env({ DATABASE_URL: 'postgres://u:p@h.neon.tech/db', VERCEL: '1' }))).toEqual({ max: 4, limitViaSet: false });
+    expect(poolSettings(env({ DATABASE_URL: 'postgres://u:p@h.neon.tech/db', VERCEL: '1' }))).toEqual({ max: 2, limitViaSet: false });
+    expect(poolSettings(env({ DATABASE_URL: POOLER, VERCEL: '1' }))).toEqual({ max: 2, limitViaSet: true });
   });
 });
 

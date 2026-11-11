@@ -29,7 +29,7 @@ export default async function Invoice(props: { params: Promise<{ token: string }
   return (
     <div className="mx-auto max-w-[760px] px-5 py-8 grid gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><Logo className="h-11 w-auto" /><p className="text-muted text-[14px]">A Cerebre Media Africa company, Lagos</p></div>
+        <div><Logo className="h-11 w-auto" /><p className="text-muted text-[14px]">A Valuemize Enterprise company, Lagos</p></div>
         <div className="text-right"><h1 className="font-display font-extrabold text-[28px]">{title}</h1><p className="text-muted text-[14px]">Order {o.code}</p><p className="text-muted text-[14px]">{describeWhen(new Date(paid ? o.paid_at : o.created_at))}</p></div>
       </div>
       <div className="grid sm:grid-cols-2 gap-4 text-[15px]">

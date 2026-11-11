@@ -86,7 +86,8 @@ export function dbSsl(env: NodeJS.ProcessEnv): false | { rejectUnauthorized: fal
  */
 export function poolSettings(env: NodeJS.ProcessEnv): { max: number; limitViaSet: boolean } {
   const host = dbHost(databaseUrl(env));
-  const fallback = env.VERCEL ? 4 : isSupabasePooler(host) ? 5 : 10;
+  // Two, not one, on Vercel: db.lock holds one connection while the work it guards runs its queries on another.
+  const fallback = env.VERCEL ? 2 : isSupabasePooler(host) ? 5 : 10;
   return { max: Math.max(1, Math.min(50, Math.floor(Number(env.DATABASE_POOL_MAX)) || fallback)), limitViaSet: isSupabaseHost(host) };
 }
 

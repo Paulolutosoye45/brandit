@@ -19,7 +19,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             ))}
           </ul>
         </div>
-        <p className="relative text-[15px] text-on-ink-muted">A Cerebre Media Africa company</p>
+        <p className="relative text-[15px] text-on-ink-muted">A Valuemize Enterprise company</p>
       </aside>
 
       <div className="flex min-h-screen flex-col">

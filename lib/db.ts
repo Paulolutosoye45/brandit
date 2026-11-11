@@ -57,8 +57,17 @@ async function open(): Promise<Driver> {
     // Supabase's shared pooler hands out a limited number of connections, so its pool is small too (lib/envcheck.ts, poolSettings).
     const { max, limitViaSet } = poolSettings(process.env);
     // The 30-second limit on any one query. On Supabase it is set with a SET on each new connection, not as a start-up setting.
-    const pool = new Pool({ connectionString: url, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, keepAlive: true, ...(limitViaSet ? {} : { statement_timeout: 30_000 }) });
+    // On Vercel a paused copy of the server keeps its open connections, and on Supabase's pooler (session mode) each of them holds
+    // one of a fixed number of slots (15 on the Free plan) until it closes. So there idle connections close after 5 seconds, and
+    // Vercel is handed the pool so it closes the idle ones before it pauses the copy. Without this the slots fill up and every
+    // page says "Supabase's connection pool is full".
+    const onVercel = !!process.env.VERCEL;
+    const pool = new Pool({ connectionString: url, ssl, max, connectionTimeoutMillis: 10_000, idleTimeoutMillis: onVercel ? 5_000 : 30_000, keepAlive: true, ...(limitViaSet ? {} : { statement_timeout: 30_000 }) });
     attachPoolGuards(pool);
+    if (onVercel) {
+      try { const { attachDatabasePool } = await import('@vercel/functions'); attachDatabasePool(pool); }
+      catch (e) { console.error(`[brandit] could not hand the database pool to Vercel: ${(e as Error).message}`); }
+    }
     // Every connection from this pool. On Supabase the query limit is set with a SET the first time a connection is used, before the
     // query that asked for it, so every query that runs there is limited. (Not in a 'connect' event: that would send two queries at once.)
     const limited = new WeakSet<object>();

@@ -4,7 +4,7 @@
  */
 export const SITE = {
   name: 'Brandit',
-  owner: 'Cerebre Media Africa',
+  owner: 'Valuemize Enterprise',
   hours: 'Monday to Saturday, 8am to 6pm',
   replyWithin: '15 minutes',
 };

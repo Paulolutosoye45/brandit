@@ -56,7 +56,7 @@ export default async function Home(props: { searchParams: Promise<{ deleted?: st
     areaServed: { '@type': 'City', name: 'Lagos' },
     address: { '@type': 'PostalAddress', addressLocality: 'Lagos', addressCountry: 'NG' },
     openingHoursSpecification: [{ '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], opens: '08:00', closes: '18:00' }],
-    parentOrganization: { '@type': 'Organization', name: 'Cerebre Media Africa' },
+    parentOrganization: { '@type': 'Organization', name: 'Valuemize Enterprise' },
   };
 
   return (

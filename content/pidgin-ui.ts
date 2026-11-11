@@ -40,7 +40,7 @@ export const PIDGIN_UI: Record<string, string> = {
   'English': 'English',
   'Pidgin': 'Pidgin',
   'Printing without the hassle. Design and print for Lagos.': 'Print wey no get wahala. Design and print for Lagos.',
-  'A Cerebre Media Africa company': 'A Cerebre Media Africa company',
+  'A Valuemize Enterprise company': 'A Valuemize Enterprise company',
   'Monday to Saturday, 8am to 6pm': 'Monday to Saturday, 8am to 6pm',
   'Skip to content': 'Skip to content',
 
